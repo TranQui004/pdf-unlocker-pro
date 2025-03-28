@@ -467,7 +467,7 @@ def emergency_reset():
         app.logger.error(f"Emergency reset error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-if __name__ == '__main__':
-    # Sử dụng PORT từ môi trường nếu có, nếu không sử dụng 5000
+if __name__ == "__main__":
+    # Use PORT from environment if available (for Render.com and other hosting services)
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=False) 
