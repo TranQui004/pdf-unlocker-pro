@@ -69,11 +69,11 @@ class DonateModal {
                             <div class="donate-method-name">Vietcombank</div>
                         </div>
                         
-                        <div class="donate-method" data-method="github">
+                        <div class="donate-method" data-method="twitter">
                             <div class="donate-method-icon">
-                                <i class="fab fa-github"></i>
+                                <i class="fab fa-twitter"></i>
                             </div>
-                            <div class="donate-method-name">GitHub</div>
+                            <div class="donate-method-name">Twitter</div>
                         </div>
                     </div>
                     
@@ -164,15 +164,15 @@ class DonateModal {
             const info = window.decryptInfo(encryptedInfo);
             this.currentInfo = info;
             
-            // Set QR code
-            const qrUrl = window.getQRCodeUrl(method, info);
-            this.qrImage.src = qrUrl;
+            // Set QR code from static image
+            const qrPath = window.getQRImagePath(method);
+            this.qrImage.src = qrPath;
             
             // Set title and info
             let title = '';
             switch(method) {
                 case 'paypal':
-                    title = 'PayPal Email';
+                    title = 'PayPal';
                     break;
                 case 'momo':
                     title = 'MoMo Number';
@@ -180,8 +180,8 @@ class DonateModal {
                 case 'vietcombank':
                     title = 'Bank Account';
                     break;
-                case 'github':
-                    title = 'GitHub Sponsor';
+                case 'twitter':
+                    title = 'Twitter';
                     break;
                 default:
                     title = 'Payment Information';

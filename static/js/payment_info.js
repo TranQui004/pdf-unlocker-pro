@@ -10,22 +10,22 @@
 // directly accessible in the source code for security reasons
 const PAYMENT_INFO = {
     // PayPal donation email
-    paypal: "ZXhhbXBsZUBnbWFpbC5jb20=",
+    paypal: "aHR0cHM6Ly93d3cucGF5cGFsLmNvbS9wYXlwYWxtZS90cmFucXVpMDA0",
     
     // GitHub sponsor URL
     github: "aHR0cHM6Ly9naXRodWIuY29tL3Nwb25zb3JzL2p1c3R0dHE=",
     
     // Twitter profile
-    twitter: "aHR0cHM6Ly90d2l0dGVyLmNvbS9qdXN0dHRx",
+    twitter: "aHR0cHM6Ly94LmNvbS9UcmFuUXVpMDA0",
     
     // MoMo number
-    momo: "MDk4NzY1NDMyMQ==",
+    momo: "MDc5NjA4NjM3Mg==",
     
     // Email address
-    email: "anVzdHR0cUBnbWFpbC5jb20=",
+    email: "dHF1aTI2N0BnbWFpbC5jb20=",
     
     // Vietcombank account
-    vietcombank: "MTIzNDU2Nzg5MCBWaWV0Y29tYmFuayBOZ3V5ZW4gVmFuIEE="
+    vietcombank: "VFJBTiBUUk9ORyBRVUkgLSAxMDMxNDY5OTM4"
 };
 
 // Make available globally
@@ -51,44 +51,25 @@ function decryptInfo(encryptedInfo) {
 window.decryptInfo = decryptInfo;
 
 /**
- * Generates QR code URL for payment info
+ * Returns the path to the QR code image based on the payment method
  * @param {string} method - Payment method
- * @param {string} text - Text to encode in QR
- * @returns {string} QR code image URL
+ * @returns {string} Path to the QR code image
  */
-function getQRCodeUrl(method, text) {
-    // Use Google Charts API to generate QR code
-    // This is a simple and reliable way to generate QR codes without additional libraries
-    const baseUrl = 'https://chart.googleapis.com/chart?cht=qr&chs=200x200&chld=M|0&choe=UTF-8';
-    
-    // Different handling for different payment methods
-    let qrContent = text;
-    
+function getQRImagePath(method) {
+    // Return the appropriate QR code image path based on the method
     switch(method) {
         case 'paypal':
-            qrContent = `https://www.paypal.com/paypalme/${text.replace('@gmail.com', '')}`;
-            break;
-        case 'github':
-            qrContent = text; // Already a URL
-            break;
+            return '/static/qr_code/qr_paypal.png';
+        case 'twitter':
+            return '/static/qr_code/qr_twitter.png';
         case 'momo':
-            // MoMo deep link format (simplified)
-            qrContent = `momo://app?action=transfer&phone=${text}`;
-            break;
+            return '/static/qr_code/qr_momo.jpg';
         case 'vietcombank':
-            // Just use the account number, no special formatting
-            qrContent = text;
-            break;
+            return '/static/qr_code/qr_vietcombank.jpg';
         default:
-            qrContent = text;
+            return '';
     }
-    
-    // Encode the content for URL
-    const encodedContent = encodeURIComponent(qrContent);
-    
-    // Return the complete URL
-    return `${baseUrl}&chl=${encodedContent}`;
 }
 
-// Make getQRCodeUrl available globally
-window.getQRCodeUrl = getQRCodeUrl;
+// Make getQRImagePath available globally
+window.getQRImagePath = getQRImagePath;
