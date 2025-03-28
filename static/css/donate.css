@@ -1,0 +1,235 @@
+/* Donate Modal Styles */
+.donate-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s, visibility 0.3s;
+}
+
+.donate-modal.show {
+    opacity: 1;
+    visibility: visible;
+}
+
+.donate-container {
+    background: linear-gradient(135deg, #f9c623 0%, #f39c12 100%);
+    border-radius: 1rem;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+    width: 90%;
+    max-width: 800px;
+    position: relative;
+    overflow: hidden;
+    animation: modalFadeIn 0.5s forwards;
+}
+
+@keyframes modalFadeIn {
+    from {
+        transform: translateY(20px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.donate-header {
+    padding: 1.5rem;
+    position: relative;
+}
+
+.donate-close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    color: white;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+
+.donate-close:hover {
+    background: rgba(255, 255, 255, 0.4);
+}
+
+.donate-title {
+    color: white;
+    font-size: 2.5rem;
+    font-weight: 800;
+    margin: 0;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.donate-content {
+    padding: 0 1.5rem 1.5rem;
+}
+
+.donate-description {
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 1.1rem;
+    line-height: 1.5;
+    margin-bottom: 1.5rem;
+}
+
+.donate-methods {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.donate-method {
+    flex: 1;
+    min-width: 120px;
+    background: rgba(255, 255, 255, 0.15);
+    padding: 1rem;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition: all 0.3s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    border: 2px solid transparent;
+}
+
+.donate-method:hover {
+    background: rgba(255, 255, 255, 0.25);
+    transform: translateY(-3px);
+}
+
+.donate-method.active {
+    background: rgba(255, 255, 255, 0.3);
+    border-color: rgba(255, 255, 255, 0.8);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.donate-method-icon {
+    font-size: 1.5rem;
+    color: white;
+    margin-bottom: 0.5rem;
+}
+
+.donate-method-name {
+    color: white;
+    font-weight: 600;
+}
+
+.donate-qr-container {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 0.5rem;
+    text-align: center;
+    display: none;
+}
+
+.donate-qr-container.show {
+    display: block;
+    animation: fadeIn 0.3s forwards;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.donate-qr-code {
+    max-width: 200px;
+    height: auto;
+    display: block;
+    margin: 0 auto 1rem;
+    border: 8px solid white;
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.donate-qr-title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #333;
+    margin-bottom: 0.5rem;
+}
+
+.donate-qr-info {
+    background: #f0f0f0;
+    padding: 0.5rem;
+    border-radius: 0.25rem;
+    font-family: monospace;
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+    word-break: break-all;
+}
+
+.donate-copy-btn {
+    background: #2c3e50;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 0.25rem;
+    cursor: pointer;
+    font-weight: 600;
+    transition: background 0.3s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto;
+}
+
+.donate-copy-btn:hover {
+    background: #34495e;
+}
+
+.donate-copy-btn i {
+    margin-right: 0.5rem;
+}
+
+/* Decorative elements */
+.donate-decoration {
+    position: absolute;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 50%;
+}
+
+.donate-decoration-1 {
+    width: 150px;
+    height: 150px;
+    top: -50px;
+    right: -50px;
+}
+
+.donate-decoration-2 {
+    width: 100px;
+    height: 100px;
+    bottom: -30px;
+    left: -30px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .donate-methods {
+        flex-direction: column;
+    }
+    
+    .donate-method {
+        width: 100%;
+    }
+    
+    .donate-title {
+        font-size: 2rem;
+    }
+}
