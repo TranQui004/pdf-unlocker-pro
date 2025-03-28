@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Unlocker Pro</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" />
+    <style>
+        .gradient-bg {
+            background: linear-gradient(135deg, #3b82f6 0%, #10b981 100%);
+        }
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+        }
+        .feature-card {
+            transition: all 0.3s ease;
+        }
+        .file-item {
+            transition: all 0.2s ease;
+        }
+        .file-item:hover {
+            background-color: #f3f4f6;
+        }
+        #dropZone.active {
+            border-color: #3b82f6;
+            background-color: rgba(59, 130, 246, 0.05);
+        }
+        .logo-text {
+            background: linear-gradient(135deg, #3b82f6 0%, #10b981 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .progress-container {
+            width: 100%;
+            background-color: #e5e7eb;
+            border-radius: 9999px;
+            height: 8px;
+            overflow: hidden;
+        }
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(135deg, #3b82f6 0%, #10b981 100%);
+            transition: width 0.3s ease;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <header class="gradient-bg py-4 shadow-md">
+        <div class="container mx-auto px-4 flex justify-between items-center">
+            <div class="flex items-center">
+                <i class="fas fa-unlock-alt text-white text-3xl mr-3"></i>
+                <h1 class="text-2xl font-bold text-white">PDF Unlocker Pro</h1>
+            </div>
+            <nav class="hidden md:block">
+                <ul class="flex space-x-6">
+                    <li><a href="#features" class="text-white hover:text-gray-200 transition-colors">Features</a></li>
+                    <li><a href="#how-it-works" class="text-white hover:text-gray-200 transition-colors">How It Works</a></li>
+                    <li><a href="#faq" class="text-white hover:text-gray-200 transition-colors">FAQ</a></li>
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container mx-auto px-4 py-12">
+        <section class="max-w-4xl mx-auto">
+            <div class="text-center mb-12 animate__animated animate__fadeIn">
+                <h2 class="text-5xl font-extrabold mb-4 logo-text">Unlock Your PDFs</h2>
+                <p class="text-xl text-gray-600 max-w-2xl mx-auto">Remove restrictions from your PDF files instantly. Unlock copy, edit, and print capabilities with just a few clicks.</p>
+                <p class="text-sm text-gray-500 mt-4 max-w-2xl mx-auto bg-blue-50 p-3 rounded-lg inline-block">
+                    <i class="fas fa-graduation-cap mr-1"></i> Created by students, for students. This tool is intended for educational purposes to support learning and academic activities.
+                </p>
+            </div>
+            
+            <div class="bg-white rounded-xl shadow-xl p-8 mb-16 animate__animated animate__fadeInUp">
+                <div class="text-center mb-8">
+                    <div class="border-2 border-dashed border-gray-300 rounded-xl p-10 transition-all duration-300" id="dropZone">
+                        <i class="fas fa-file-pdf text-5xl text-blue-500 mb-4"></i>
+                        <p class="text-xl text-gray-600 mb-4">Drag and drop your PDF files here</p>
+                        <p class="text-gray-500 mb-6">or</p>
+                        <label class="inline-block">
+                            <span class="gradient-bg text-white px-8 py-3 rounded-lg cursor-pointer hover:opacity-90 transition-colors shadow-md">
+                                Browse Files
+                            </span>
+                            <input type="file" id="fileInput" multiple accept=".pdf" class="hidden">
+                        </label>
+                        <p class="text-sm text-gray-500 mt-4">Max file size: 16MB</p>
+                    </div>
+                </div>
+
+                <div id="uploadStatus" class="hidden mb-6 text-center">
+                    <p class="text-gray-700 mb-2">Uploading files... <span id="uploadProgress">0%</span></p>
+                    <div class="progress-container">
+                        <div class="progress-bar" id="progressBar" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <div id="fileList" class="space-y-3 max-h-60 overflow-y-auto mb-6 px-1"></div>
+
+                <div class="text-center">
+                    <button id="unlockBtn" class="gradient-bg text-white text-lg px-10 py-4 rounded-lg shadow-md hover:opacity-90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                        <i class="fas fa-unlock-alt mr-2"></i> Unlock PDFs
+                    </button>
+                    <p id="processingMessage" class="hidden mt-4 text-gray-600">
+                        <i class="fas fa-spinner fa-spin mr-2"></i> Processing your files...
+                    </p>
+                </div>
+                
+                <!-- Download history section -->
+                <div id="downloadHistory" class="mt-8 hidden border-t border-gray-200 pt-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h4 class="text-lg font-semibold text-gray-700">Processed Files</h4>
+                        <div class="flex space-x-3">
+                            <button id="downloadAllBtn" class="bg-blue-500 hover:bg-blue-600 text-white text-sm px-3 py-1 rounded-lg transition-colors shadow-sm flex items-center" title="Download all files as a single ZIP archive">
+                                <i class="fas fa-download mr-1"></i> Download All
+                            </button>
+                            <button id="emergencyResetBtn" class="bg-red-100 hover:bg-red-200 text-red-700 text-xs px-2 py-1 rounded-lg transition-colors shadow-sm flex items-center">
+                                <i class="fas fa-exclamation-triangle mr-1"></i> Reset
+                            </button>
+                        </div>
+                    </div>
+                    <div class="bg-blue-50 p-3 rounded-lg mb-4 text-sm text-blue-700">
+                        <i class="fas fa-info-circle mr-1"></i> 
+                        <span>Click <strong>Download</strong> for individual files. Use <strong>Download All</strong> to get all files in a single ZIP archive.</span>
+                    </div>
+                    <div id="downloadLinks" class="space-y-2">
+                        <!-- Download links will be added here -->
+                    </div>
+                </div>
+            </div>
+            
+            <section id="features" class="mb-16">
+                <h3 class="text-3xl font-bold text-center mb-10">Key Features</h3>
+                <div class="grid md:grid-cols-3 gap-8">
+                    <div class="feature-card bg-white p-6 rounded-xl shadow-md">
+                        <div class="flex items-center mb-4">
+                            <div class="w-12 h-12 rounded-full gradient-bg flex items-center justify-center mr-4">
+                                <i class="fas fa-lock-open text-white text-xl"></i>
+                            </div>
+                            <h4 class="text-xl font-semibold">Remove Restrictions</h4>
+                        </div>
+                        <p class="text-gray-600">Unlock secured PDFs to enable copying, editing, printing, and all other functions.</p>
+                    </div>
+                    <div class="feature-card bg-white p-6 rounded-xl shadow-md">
+                        <div class="flex items-center mb-4">
+                            <div class="w-12 h-12 rounded-full gradient-bg flex items-center justify-center mr-4">
+                                <i class="fas fa-file-alt text-white text-xl"></i>
+                            </div>
+                            <h4 class="text-xl font-semibold">Clean Filenames</h4>
+                        </div>
+                        <p class="text-gray-600">Automatically removes "(SECURED)" and similar labels from your filenames.</p>
+                    </div>
+                    <div class="feature-card bg-white p-6 rounded-xl shadow-md">
+                        <div class="flex items-center mb-4">
+                            <div class="w-12 h-12 rounded-full gradient-bg flex items-center justify-center mr-4">
+                                <i class="fas fa-shield-alt text-white text-xl"></i>
+                            </div>
+                            <h4 class="text-xl font-semibold">Secure Processing</h4>
+                        </div>
+                        <p class="text-gray-600">Your files are processed locally and never stored on external servers.</p>
+                    </div>
+                </div>
+            </section>
+            
+            <section id="how-it-works" class="mb-16">
+                <h3 class="text-3xl font-bold text-center mb-10">How It Works</h3>
+                <div class="flex flex-col md:flex-row justify-between items-center space-y-8 md:space-y-0 md:space-x-8">
+                    <div class="flex-1 text-center p-6">
+                        <div class="w-16 h-16 rounded-full gradient-bg flex items-center justify-center mx-auto mb-4">
+                            <span class="text-white font-bold text-xl">1</span>
+                        </div>
+                        <h4 class="text-xl font-semibold mb-3">Upload Files</h4>
+                        <p class="text-gray-600">Select your secured PDF files by dragging and dropping or browsing.</p>
+                    </div>
+                    <div class="flex-1 text-center p-6">
+                        <div class="w-16 h-16 rounded-full gradient-bg flex items-center justify-center mx-auto mb-4">
+                            <span class="text-white font-bold text-xl">2</span>
+                        </div>
+                        <h4 class="text-xl font-semibold mb-3">Process</h4>
+                        <p class="text-gray-600">Click "Unlock PDFs" and let our tool remove all restrictions.</p>
+                    </div>
+                    <div class="flex-1 text-center p-6">
+                        <div class="w-16 h-16 rounded-full gradient-bg flex items-center justify-center mx-auto mb-4">
+                            <span class="text-white font-bold text-xl">3</span>
+                        </div>
+                        <h4 class="text-xl font-semibold mb-3">Download</h4>
+                        <p class="text-gray-600">Get your unrestricted PDF files with clean filenames.</p>
+                    </div>
+                </div>
+            </section>
+            
+            <section id="faq" class="mb-12">
+                <h3 class="text-3xl font-bold text-center mb-10">Frequently Asked Questions</h3>
+                <div class="space-y-4">
+                    <div class="bg-white p-6 rounded-xl shadow-md">
+                        <h4 class="text-xl font-semibold mb-2">Is this process secure?</h4>
+                        <p class="text-gray-600">Yes, all files are processed locally on your device. We do not store or send your PDFs to any external server.</p>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-md">
+                        <h4 class="text-xl font-semibold mb-2">Will the PDF content remain the same?</h4>
+                        <p class="text-gray-600">Yes, the content of your PDF will not be altered. Only the security restrictions are removed.</p>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-md">
+                        <h4 class="text-xl font-semibold mb-2">What types of restrictions can be removed?</h4>
+                        <p class="text-gray-600">Our tool can remove copy restrictions, print restrictions, edit restrictions, and other security features.</p>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-md border-l-4 border-yellow-500">
+                        <h4 class="text-xl font-semibold mb-2">Am I allowed to unlock any PDF?</h4>
+                        <p class="text-gray-600">You should only unlock PDFs that you have legitimate rights to modify. For students, this typically includes educational materials you need to annotate for study, PDFs that you've created yourself, PDFs where you have explicit permission from the creator, or PDFs that are not subject to copyright restrictions.</p>
+                        <p class="text-gray-600 mt-2">Using this tool to bypass security on protected documents without proper authorization may violate copyright laws and other regulations. Users are solely responsible for ensuring their use of this tool complies with applicable laws.</p>
+                    </div>
+                    <!-- Additional FAQ entry about educational use -->
+                    <div class="bg-white p-6 rounded-xl shadow-md border-l-4 border-blue-500">
+                        <h4 class="text-xl font-semibold mb-2">Who created this tool?</h4>
+                        <p class="text-gray-600">PDF Unlocker Pro was created by students as an educational project. It was developed to help fellow students and educators access and interact with educational materials more effectively for legitimate learning purposes.</p>
+                        <p class="text-gray-600 mt-2">This tool is provided for educational purposes only and is not intended for commercial use or distribution.</p>
+                    </div>
+                </div>
+            </section>
+        </section>
+    </main>
+    
+    <footer class="bg-gray-800 text-white py-8">
+        <div class="container mx-auto px-4">
+            <div class="flex flex-col md:flex-row justify-between items-center">
+                <div class="mb-4 md:mb-0">
+                    <div class="flex items-center">
+                        <i class="fas fa-unlock-alt text-2xl mr-2"></i>
+                        <h2 class="text-xl font-bold">PDF Unlocker Pro</h2>
+                    </div>
+                    <p class="text-gray-400 mt-2">© 2025 PDF Unlocker. All rights reserved.</p>
+                    <p class="text-gray-500 text-xs mt-1">Created by students for educational purposes</p>
+                </div>
+                
+                <div class="mb-4 md:mb-0 text-center text-gray-400 text-sm">
+                    <p>This tool is provided under the <a href="https://opensource.org/licenses/MIT" class="text-blue-400 hover:underline">MIT License</a>.</p>
+                    <p class="mt-2">Use for legitimate academic and learning purposes. Ensure you have the right to modify the PDF files you process.</p>
+                </div>
+                
+                <div>
+                    <ul class="flex space-x-6">
+                        <li><a href="#" class="text-gray-300 hover:text-white transition-colors"><i class="fab fa-github"></i></a></li>
+                        <li><a href="#" class="text-gray-300 hover:text-white transition-colors"><i class="fab fa-twitter"></i></a></li>
+                        <li><a href="#" class="text-gray-300 hover:text-white transition-colors"><i class="fas fa-envelope"></i></a></li>
+                        <li>
+                            <button id="showDisclaimerBtn" class="text-gray-300 hover:text-white transition-colors flex items-center">
+                                <i class="fas fa-info-circle mr-1"></i> Legal Disclaimer
+                            </button>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Add this modal HTML right before the </body> tag -->
+    <div id="resetModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center hidden">
+        <div class="bg-white rounded-lg shadow-xl p-6 max-w-md w-full animate__animated animate__fadeInDown">
+            <div class="text-center mb-4">
+                <i class="fas fa-exclamation-triangle text-yellow-500 text-4xl"></i>
+                <h3 class="text-xl font-bold mt-2">Reset Application</h3>
+            </div>
+            <p class="text-gray-600 mb-6 text-center">
+                This will delete all current files and start over. Are you sure you want to continue?
+            </p>
+            <div class="flex justify-center space-x-4">
+                <button id="resetCancelBtn" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg transition-colors">
+                    Cancel
+                </button>
+                <button id="resetConfirmBtn" class="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors">
+                    Reset
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Disclaimer Modal -->
+    <div id="disclaimerModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center hidden">
+        <div class="bg-white text-gray-800 rounded-lg shadow-xl p-6 max-w-2xl w-full animate__animated animate__fadeInUp" style="max-height: 80vh; display: flex; flex-direction: column;">
+            <div class="flex justify-between items-center mb-4 pb-2 border-b border-gray-200">
+                <h3 class="text-xl font-bold text-gray-800 flex items-center">
+                    <i class="fas fa-balance-scale text-blue-500 mr-2"></i>
+                    Legal Disclaimer
+                </h3>
+                <button id="closeDisclaimerBtn" class="text-gray-400 hover:text-gray-600 transition-colors">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            
+            <div class="overflow-y-auto pr-2" style="flex: 1;">
+                <div class="space-y-4">
+                    <section>
+                        <h4 class="font-semibold text-gray-700 mb-2">Educational Purpose</h4>
+                        <p class="text-gray-600">
+                            PDF Unlocker Pro was created by students as an educational project. It is designed to support academic activities by helping students access educational materials for legitimate learning purposes. This tool is not intended for any commercial use or copyright infringement.
+                        </p>
+                    </section>
+                    
+                    <section>
+                        <h4 class="font-semibold text-gray-700 mb-2">Intended Use</h4>
+                        <p class="text-gray-600">
+                            PDF Unlocker Pro is designed to help users, especially students, remove restrictions from PDF files they have legitimate rights to modify. This includes educational materials you need to annotate, highlight or quote for study purposes, PDFs you've personally created, or documents where you have explicit permission.
+                        </p>
+                    </section>
+                    
+                    <section>
+                        <h4 class="font-semibold text-gray-700 mb-2">Prohibited Use</h4>
+                        <p class="text-gray-600">
+                            Using this tool to bypass security measures on protected documents without proper authorization may constitute copyright infringement and could violate local, national, and international laws and regulations regarding intellectual property and document security.
+                        </p>
+                    </section>
+                    
+                    <section>
+                        <h4 class="font-semibold text-gray-700 mb-2">No Warranty</h4>
+                        <p class="text-gray-600">
+                            This software is provided "as is" without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, and non-infringement. In no event shall the authors, copyright holders, or distributors be liable for any claim, damages, or other liability, whether in an action of contract, tort, or otherwise, arising from, out of, or in connection with the software or the use or other dealings in the software.
+                        </p>
+                    </section>
+                    
+                    <section>
+                        <h4 class="font-semibold text-gray-700 mb-2">User Responsibility</h4>
+                        <p class="text-gray-600">
+                            By using PDF Unlocker Pro, you acknowledge that you are solely responsible for ensuring your use complies with all applicable laws regarding document modification, copyright protection, intellectual property rights, and any contractual obligations that may apply to the documents you process.
+                        </p>
+                    </section>
+                    
+                    <section>
+                        <h4 class="font-semibold text-gray-700 mb-2">Data Protection</h4>
+                        <p class="text-gray-600">
+                            While PDF Unlocker Pro processes all files locally on your device and does not transmit your documents to external servers, you remain responsible for protecting sensitive data contained within your PDFs and ensuring you have proper authorization to access and modify such data.
+                        </p>
+                    </section>
+                </div>
+            </div>
+            
+            <div class="mt-4 pt-4 border-t border-gray-200 text-center">
+                <button id="acceptDisclaimerBtn" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors">
+                    I Understand
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const fileList = document.getElementById('fileList');
+        const unlockBtn = document.getElementById('unlockBtn');
+        const uploadStatus = document.getElementById('uploadStatus');
+        const progressBar = document.getElementById('progressBar');
+        const uploadProgress = document.getElementById('uploadProgress');
+        const processingMessage = document.getElementById('processingMessage');
+        let files = [];
+
+        // Track download history
+        const downloadHistory = document.getElementById('downloadHistory');
+        const downloadLinks = document.getElementById('downloadLinks');
+        const downloadAllBtn = document.getElementById('downloadAllBtn');
+        const emergencyResetBtn = document.getElementById('emergencyResetBtn');
+        const processedFiles = [];
+
+        // Function to clean filename by removing "(SECURED)" text and similar variations
+        function cleanFilename(filename) {
+            // Remove common security indicators like (SECURED), [SECURED], [PROTECTED], etc.
+            let cleaned = filename.replace(/\s*[\(\[](?:SECURED|PROTECTED|LOCKED|READONLY)[\)\]]\s*/gi, '');
+            
+            // Remove "unlocked_" prefix if present
+            if (cleaned.startsWith("unlocked_")) {
+                cleaned = cleaned.substring(9);
+            }
+            
+            return cleaned;
+        }
+
+        // Drag and drop handlers
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('active');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('active');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('active');
+            const droppedFiles = Array.from(e.dataTransfer.files).filter(file => file.type === 'application/pdf');
+            
+            if (droppedFiles.length === 0) {
+                showNotification('Please upload PDF files only', 'error');
+                return;
+            }
+            
+            handleFiles(droppedFiles);
+            animateDroppedFiles();
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            const selectedFiles = Array.from(e.target.files);
+            
+            if (selectedFiles.length === 0) return;
+            
+            const pdfFiles = selectedFiles.filter(file => file.type === 'application/pdf');
+            
+            if (pdfFiles.length < selectedFiles.length) {
+                showNotification('Some files were skipped. Only PDF files are supported.', 'warning');
+            }
+            
+            handleFiles(pdfFiles);
+            animateDroppedFiles();
+        });
+
+        function animateDroppedFiles() {
+            dropZone.classList.add('animate__animated', 'animate__pulse');
+            setTimeout(() => {
+                dropZone.classList.remove('animate__animated', 'animate__pulse');
+            }, 1000);
+        }
+
+        function handleFiles(newFiles) {
+            // Check if files exceed the maximum size
+            const oversizedFiles = newFiles.filter(file => file.size > 16 * 1024 * 1024);
+            if (oversizedFiles.length > 0) {
+                showNotification('Some files exceed the 16MB limit and were not added.', 'error');
+                newFiles = newFiles.filter(file => file.size <= 16 * 1024 * 1024);
+            }
+            
+            files = [...files, ...newFiles];
+            updateFileList();
+            unlockBtn.disabled = files.length === 0;
+        }
+
+        // Improved notification system to prevent overlapping
+        const notificationContainer = document.createElement('div');
+        notificationContainer.className = 'fixed bottom-4 right-4 z-50 flex flex-col-reverse gap-2';
+        document.body.appendChild(notificationContainer);
+
+        let notificationQueue = [];
+        let isShowingNotification = false;
+
+        function showNotification(message, type = 'info') {
+            // Add to queue
+            notificationQueue.push({ message, type });
+            
+            // If not currently showing a notification, show the next one
+            if (!isShowingNotification) {
+                showNextNotification();
+            }
+        }
+
+        function showNextNotification() {
+            if (notificationQueue.length === 0) {
+                isShowingNotification = false;
+                return;
+            }
+            
+            isShowingNotification = true;
+            const { message, type } = notificationQueue.shift();
+            
+            const notification = document.createElement('div');
+            notification.className = `p-4 rounded-lg shadow-lg animate__animated animate__fadeInUp max-w-md mb-2 flex items-center`;
+            
+            if (type === 'error') {
+                notification.classList.add('bg-red-500', 'text-white');
+                notification.innerHTML = `<i class="fas fa-exclamation-circle mr-2"></i>${message}`;
+            } else if (type === 'success') {
+                notification.classList.add('bg-green-500', 'text-white');
+                notification.innerHTML = `<i class="fas fa-check-circle mr-2"></i>${message}`;
+            } else if (type === 'warning') {
+                notification.classList.add('bg-yellow-500', 'text-white');
+                notification.innerHTML = `<i class="fas fa-exclamation-triangle mr-2"></i>${message}`;
+            } else {
+                notification.classList.add('bg-blue-500', 'text-white');
+                notification.innerHTML = `<i class="fas fa-info-circle mr-2"></i>${message}`;
+            }
+            
+            notificationContainer.appendChild(notification);
+            
+            // Fade out and remove after 3 seconds
+            setTimeout(() => {
+                notification.classList.remove('animate__fadeInUp');
+                notification.classList.add('animate__fadeOutRight');
+                setTimeout(() => {
+                    if (notification.parentNode === notificationContainer) {
+                        notificationContainer.removeChild(notification);
+                    }
+                    // Show the next notification after a small delay
+                    setTimeout(showNextNotification, 300);
+                }, 500);
+            }, 3000);
+        }
+
+        function updateFileList() {
+            fileList.innerHTML = '';
+            
+            if (files.length === 0) {
+                return;
+            }
+            
+            files.forEach((file, index) => {
+                // Clean the displayed filename
+                const displayName = cleanFilename(file.name);
+                
+                // Create file item element
+                const fileItem = document.createElement('div');
+                fileItem.className = 'file-item flex items-center justify-between bg-gray-50 p-4 rounded-lg';
+                fileItem.innerHTML = `
+                    <div class="flex items-center flex-1 overflow-hidden">
+                        <i class="fas fa-file-pdf text-red-500 mr-3"></i>
+                        <div class="overflow-hidden">
+                            <span class="text-gray-800 font-medium block truncate" title="${displayName}">${displayName}</span>
+                            <span class="text-gray-500 text-sm">${formatFileSize(file.size)}</span>
+                        </div>
+                    </div>
+                    <button class="text-gray-400 hover:text-red-500 transition-colors ml-4" onclick="removeFile(${index})">
+                        <i class="fas fa-times"></i>
+                    </button>
+                `;
+                
+                fileList.appendChild(fileItem);
+                
+                // Add animation
+                setTimeout(() => {
+                    fileItem.classList.add('animate__animated', 'animate__fadeIn');
+                }, index * 100);
+            });
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function removeFile(index) {
+            const fileItem = fileList.children[index];
+            fileItem.classList.remove('animate__fadeIn');
+            fileItem.classList.add('animate__fadeOut');
+            
+            setTimeout(() => {
+                files.splice(index, 1);
+                updateFileList();
+                unlockBtn.disabled = files.length === 0;
+            }, 300);
+        }
+
+        unlockBtn.addEventListener('click', async () => {
+            if (files.length === 0) return;
+
+            unlockBtn.disabled = true;
+            processingMessage.classList.remove('hidden');
+            
+            // Show upload progress
+            uploadStatus.classList.remove('hidden');
+            
+            // Simulate upload progress
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += Math.random() * 10;
+                if (progress > 100) progress = 100;
+                
+                progressBar.style.width = `${progress}%`;
+                uploadProgress.textContent = `${Math.round(progress)}%`;
+                
+                if (progress === 100) {
+                    clearInterval(interval);
+                    setTimeout(() => {
+                        uploadStatus.classList.add('hidden');
+                    }, 500);
+                }
+            }, 200);
+
+            const formData = new FormData();
+            files.forEach(file => formData.append('files[]', file));
+
+            try {
+                const response = await fetch('/unlock', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.status} ${response.statusText}`);
+                }
+
+                const results = await response.json();
+                let successCount = 0;
+                let errorCount = 0;
+                
+                // Process each result but don't download automatically
+                for (const result of results) {
+                    if (result.status === 'success') {
+                        successCount++;
+                        // Add to processed files list
+                        processedFiles.push({
+                            filename: result.filename,
+                            url: result.download_url
+                        });
+                    } else {
+                        errorCount++;
+                        showNotification(`Error processing ${result.filename}: ${result.message}`, 'error');
+                    }
+                }
+                
+                // Update the download history section
+                updateDownloadHistory();
+                
+                if (successCount > 0) {
+                    if (successCount === 1) {
+                        showNotification(`Successfully unlocked 1 file! You can now download it below.`, 'success');
+                    } else {
+                        showNotification(`Successfully unlocked ${successCount} files! You can download them individually or use "Download All" for a ZIP archive.`, 'success');
+                    }
+                    // Clear file list after successful processing
+                    files = [];
+                    updateFileList();
+                }
+                
+                if (errorCount > 0) {
+                    showNotification(`Failed to process ${errorCount} file(s). Please try again.`, 'warning');
+                }
+            } catch (error) {
+                console.error('Processing error:', error);
+                showNotification(`An error occurred: ${error.message}`, 'error');
+            } finally {
+                clearInterval(interval);
+                progressBar.style.width = '0%';
+                uploadStatus.classList.add('hidden');
+                unlockBtn.disabled = false;
+                processingMessage.classList.add('hidden');
+            }
+        });
+
+        function updateDownloadHistory() {
+            if (processedFiles.length === 0) {
+                downloadHistory.classList.add('hidden');
+                return;
+            }
+            
+            downloadHistory.classList.remove('hidden');
+            downloadLinks.innerHTML = '';
+            
+            processedFiles.forEach((file, index) => {
+                const linkItem = document.createElement('div');
+                linkItem.className = 'flex items-center justify-between bg-gray-50 p-3 rounded-lg animate__animated animate__fadeIn';
+                linkItem.innerHTML = `
+                    <div class="flex items-center flex-1 overflow-hidden">
+                        <i class="fas fa-file-pdf text-green-500 mr-3"></i>
+                        <span class="text-gray-800 truncate" title="${file.filename}">${file.filename}</span>
+                    </div>
+                    <div class="flex items-center">
+                        <a href="${file.url}" download class="text-blue-500 hover:text-blue-700 transition-colors px-3 py-1 flex items-center">
+                            <i class="fas fa-download mr-1"></i> Download
+                        </a>
+                        <button class="text-gray-400 hover:text-red-500 transition-colors ml-2" onclick="removeFromHistory(${index})">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                `;
+                downloadLinks.appendChild(linkItem);
+            });
+        }
+
+        function removeFromHistory(index) {
+            processedFiles.splice(index, 1);
+            updateDownloadHistory();
+            showNotification('File removed from list', 'info');
+        }
+
+        // Handle "Download All" button
+        downloadAllBtn.addEventListener('click', async () => {
+            if (processedFiles.length === 0) return;
+            
+            // Show a confirmation dialog if there are multiple files
+            if (processedFiles.length > 1) {
+                const confirmed = confirm(`Download All will create a ZIP file containing all ${processedFiles.length} unlocked PDF files. Continue?`);
+                if (!confirmed) return;
+            }
+            
+            try {
+                showNotification('Preparing ZIP archive for download...', 'info');
+                
+                // Create a list of file URLs to download
+                const fileUrls = processedFiles.map(file => file.url);
+                
+                // Call the API to create a ZIP archive
+                const response = await fetch('/download-all', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ files: fileUrls })
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to create archive');
+                }
+                
+                const result = await response.json();
+                
+                // Show success notification
+                showNotification('ZIP archive created successfully! Starting download...', 'success');
+                
+                // Download the ZIP file
+                setTimeout(() => {
+                    window.location.href = result.download_url;
+                }, 1000);
+                
+            } catch (error) {
+                console.error('Download all error:', error);
+                showNotification('Failed to create download archive. Try downloading files individually.', 'error');
+            }
+        });
+
+        // Handle emergency reset - replace the existing event listener
+        emergencyResetBtn.addEventListener('click', () => {
+            // Show the custom modal instead of browser confirm
+            document.getElementById('resetModal').classList.remove('hidden');
+        });
+
+        // Add event listeners for the modal buttons
+        document.getElementById('resetCancelBtn').addEventListener('click', () => {
+            document.getElementById('resetModal').classList.add('hidden');
+        });
+
+        document.getElementById('resetConfirmBtn').addEventListener('click', async () => {
+            try {
+                // Hide the modal
+                document.getElementById('resetModal').classList.add('hidden');
+                
+                // Process the reset without showing any notification
+                const response = await fetch('/emergency-reset', {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    // Clear the processed files array
+                    processedFiles.length = 0;
+                    updateDownloadHistory();
+                    
+                    // Clear any remaining files in the upload list
+                    files = [];
+                    updateFileList();
+                    unlockBtn.disabled = true;
+                    
+                    // Hide sections if they were visible
+                    downloadHistory.classList.add('hidden');
+                    
+                    // No success notification
+                } else {
+                    throw new Error('Server error during reset');
+                }
+            } catch (error) {
+                console.error('Reset error:', error);
+                // Only show notification for errors, not for success
+                showNotification(`Reset failed: ${error.message}. Try again.`, 'error');
+            }
+        });
+
+        // Smooth scrolling for navigation links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const targetId = this.getAttribute('href');
+                const targetElement = document.querySelector(targetId);
+                
+                if (targetElement) {
+                    window.scrollTo({
+                        top: targetElement.offsetTop - 100,
+                        behavior: 'smooth'
+                    });
+                }
+            });
+        });
+
+        // Load existing processed files when the page loads
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const response = await fetch('/get-processed-files');
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    if (data.files && data.files.length > 0) {
+                        // Add each file to the processedFiles array
+                        data.files.forEach(file => {
+                            processedFiles.push({
+                                filename: file.display_name,
+                                url: file.download_url
+                            });
+                        });
+                        
+                        // Update the UI
+                        updateDownloadHistory();
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading processed files:', error);
+            }
+        });
+
+        // Disclaimer Modal Script
+        const showDisclaimerBtn = document.getElementById('showDisclaimerBtn');
+        const closeDisclaimerBtn = document.getElementById('closeDisclaimerBtn');
+        const acceptDisclaimerBtn = document.getElementById('acceptDisclaimerBtn');
+        const disclaimerModal = document.getElementById('disclaimerModal');
+        
+        showDisclaimerBtn.addEventListener('click', () => {
+            disclaimerModal.classList.remove('hidden');
+        });
+        
+        function closeDisclaimerModal() {
+            disclaimerModal.querySelector('.bg-white').classList.remove('animate__fadeInUp');
+            disclaimerModal.querySelector('.bg-white').classList.add('animate__fadeOutDown');
+            
+            setTimeout(() => {
+                disclaimerModal.classList.add('hidden');
+                disclaimerModal.querySelector('.bg-white').classList.remove('animate__fadeOutDown');
+                disclaimerModal.querySelector('.bg-white').classList.add('animate__fadeInUp');
+            }, 500);
+        }
+        
+        closeDisclaimerBtn.addEventListener('click', closeDisclaimerModal);
+        acceptDisclaimerBtn.addEventListener('click', closeDisclaimerModal);
+        
+        // Close on click outside the modal content
+        disclaimerModal.addEventListener('click', (e) => {
+            if (e.target === disclaimerModal) {
+                closeDisclaimerModal();
+            }
+        });
+    </script>
+</body>
+</html> 
