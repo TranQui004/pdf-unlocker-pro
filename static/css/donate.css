@@ -149,13 +149,15 @@
 }
 
 .donate-qr-code {
-    max-width: 200px;
+    max-width: 280px;
     height: auto;
     display: block;
     margin: 0 auto 1rem;
     border: 8px solid white;
     border-radius: 0.5rem;
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    image-rendering: -webkit-optimize-contrast; /* Cho Chrome và Safari */
+    image-rendering: crisp-edges; /* Tiêu chuẩn */
 }
 
 .donate-qr-title {

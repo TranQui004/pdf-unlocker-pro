@@ -12,8 +12,8 @@ const PAYMENT_INFO = {
     // PayPal donation email
     paypal: "aHR0cHM6Ly93d3cucGF5cGFsLmNvbS9wYXlwYWxtZS90cmFucXVpMDA0",
     
-    // GitHub sponsor URL
-    github: "aHR0cHM6Ly9naXRodWIuY29tL3Nwb25zb3JzL2p1c3R0dHE=",
+    // GitHub profile URL
+    github: "aHR0cHM6Ly9naXRodWIuY29tL1RyYW5RdWkwMDQ=",
     
     // Twitter profile
     twitter: "aHR0cHM6Ly94LmNvbS9UcmFuUXVpMDA0",
@@ -60,8 +60,6 @@ function getQRImagePath(method) {
     switch(method) {
         case 'paypal':
             return '/static/qr_code/qr_paypal.png';
-        case 'twitter':
-            return '/static/qr_code/qr_twitter.png';
         case 'momo':
             return '/static/qr_code/qr_momo.jpg';
         case 'vietcombank':

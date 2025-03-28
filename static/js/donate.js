@@ -68,13 +68,6 @@ class DonateModal {
                             </div>
                             <div class="donate-method-name">Vietcombank</div>
                         </div>
-                        
-                        <div class="donate-method" data-method="twitter">
-                            <div class="donate-method-icon">
-                                <i class="fab fa-twitter"></i>
-                            </div>
-                            <div class="donate-method-name">Twitter</div>
-                        </div>
                     </div>
                     
                     <div class="donate-qr-container" id="donateQrContainer">
@@ -180,9 +173,6 @@ class DonateModal {
                 case 'vietcombank':
                     title = 'Bank Account';
                     break;
-                case 'twitter':
-                    title = 'Twitter';
-                    break;
                 default:
                     title = 'Payment Information';
             }
@@ -249,9 +239,8 @@ function setupSocialLinks() {
     try {
         // GitHub Link
         const githubLink = document.getElementById('githubLink');
-        if (githubLink && window.PAYMENT_INFO && window.PAYMENT_INFO.github) {
-            const githubUrl = window.decryptInfo(window.PAYMENT_INFO.github);
-            githubLink.href = githubUrl;
+        if (githubLink) {
+            githubLink.href = 'https://github.com/TranQui004';
             githubLink.target = "_blank";
             githubLink.rel = "noopener noreferrer";
         }
