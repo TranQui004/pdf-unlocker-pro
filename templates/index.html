@@ -865,6 +865,36 @@
                     });
                 });
             });
+
+            // Setup social media links
+            if (window.PAYMENT_INFO && window.decryptInfo) {
+                try {
+                    // GitHub link
+                    const githubLink = document.getElementById('githubLink');
+                    if (githubLink) {
+                        githubLink.href = 'https://github.com/TranQui004';
+                        githubLink.target = '_blank';
+                        githubLink.rel = 'noopener noreferrer';
+                    }
+                    
+                    // Twitter link
+                    const twitterLink = document.getElementById('twitterLink');
+                    if (twitterLink && window.PAYMENT_INFO.twitter) {
+                        twitterLink.href = window.decryptInfo(window.PAYMENT_INFO.twitter);
+                        twitterLink.target = '_blank';
+                        twitterLink.rel = 'noopener noreferrer';
+                    }
+                    
+                    // Email link
+                    const emailLink = document.getElementById('emailLink');
+                    if (emailLink && window.PAYMENT_INFO.email) {
+                        const email = window.decryptInfo(window.PAYMENT_INFO.email);
+                        emailLink.href = `mailto:${email}`;
+                    }
+                } catch (error) {
+                    console.error('Error setting up social links:', error);
+                }
+            }
         });
     </script>
     <script src="{{ url_for('static', filename='js/payment_info.js') }}"></script>
