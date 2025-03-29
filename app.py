@@ -120,84 +120,38 @@ def clean_filename(filename):
     return cleaned_name
 
 def unlock_pdf(input_path, output_path, password=None):
+    # Define temporary files that might be created
+    temp_files = [
+        output_path + ".method2",
+        output_path + ".method3",
+        output_path + ".method4"
+    ]
+    
     try:
+        # Track our attempted methods
+        tried_methods = []
+        
+        # APPROACH 1: Direct decryption with PyPDF2
+        tried_methods.append("direct_decryption")
+        
         # First attempt to open PDF with password if provided
         if password:
             try:
-                # Phương thức 1: Decrypt với PyPDF2
-                reader = PdfReader(input_path)
+                reader = PdfReader(input_path, password=password)
+                # Explicitly decrypt the PDF with the provided password
                 if reader.is_encrypted:
-                    # Decrypt using the first method
-                    success = reader.decrypt(password)
-                    
-                    # If not successful, try alternate approaches
-                    if success != 1:
-                        app.logger.info(f"First decrypt attempt failed, trying alternate methods")
-                        
-                        # Phương thức 2: Tạo PdfReader với password parameter
-                        try:
-                            reader = PdfReader(input_path, password=password)
-                            if reader.is_encrypted:
-                                app.logger.error("PDF still encrypted after providing password - method 2 failed")
-                                
-                                # Phương thức 3: Thử tạo file mới hoàn toàn không có mật khẩu
-                                try:
-                                    app.logger.info("Trying method 3: Creating completely new file")
-                                    # Mở lại file với password
-                                    reader = PdfReader(input_path)
-                                    reader.decrypt(password)
-                                    
-                                    # Tạo writer mới
-                                    writer = PdfWriter()
-                                    
-                                    # Thêm tất cả các trang vào writer
-                                    for page in reader.pages:
-                                        writer.add_page(page)
-                                        
-                                    # Ghi ra file mới không có mật khẩu
-                                    with open(output_path, 'wb') as f:
-                                        writer.write(f)
-                                        
-                                    # Kiểm tra file đã được tạo thành công
-                                    if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-                                        # Kiểm tra file mới có thể đọc được không
-                                        try:
-                                            test_reader = PdfReader(output_path)
-                                            if not test_reader.is_encrypted:
-                                                return {"status": "success", "message": "PDF unlocked successfully using method 3"}
-                                        except:
-                                            app.logger.error("Method 3 created invalid PDF")
-                                            
-                                    # Nếu vẫn thất bại, thử một cách khác
-                                    app.logger.info("Method 3 failed, trying method 4 with direct input/output")
-                                    # Mở với binary mode để đọc trực tiếp
-                                    with open(input_path, 'rb') as input_file:
-                                        reader = PdfReader(input_file)
-                                        # Mở với binary mode để ghi trực tiếp
-                                        success = reader.decrypt(password)
-                                        if success == 1 or not reader.is_encrypted:
-                                            writer = PdfWriter()
-                                            for page in reader.pages:
-                                                writer.add_page(page)
-                                            with open(output_path, 'wb') as output_file:
-                                                writer.write(output_file)
-                                            if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-                                                return {"status": "success", "message": "PDF unlocked successfully using method 4"}
-                                except Exception as m3_error:
-                                    app.logger.error(f"Method 3 and 4 failed: {str(m3_error)}")
-                                
-                                return {"status": "error", "message": "Incorrect password - failed all unlock methods"}
-                        except Exception as pw_error:
-                            app.logger.error(f"Second decrypt attempt failed: {str(pw_error)}")
-                            return {"status": "error", "message": "Incorrect password"}
+                    # This will raise an exception if the password is wrong
+                    reader.decrypt(password)
             except Exception as e:
-                app.logger.error(f"Error opening PDF: {str(e)}")
-                return {"status": "error", "message": f"Error opening PDF: {str(e)}"}
+                if "password" in str(e).lower():
+                    return {"status": "error", "message": "Incorrect password"}
+                else:
+                    return {"status": "error", "message": str(e)}
         else:
             # Try to open without password
             try:
                 reader = PdfReader(input_path)
-                # Check if document is encrypted - needs password
+                # Check if file is encrypted
                 if reader.is_encrypted:
                     return {"status": "needs_password", "message": "This PDF is password protected"}
             except Exception as e:
@@ -205,27 +159,201 @@ def unlock_pdf(input_path, output_path, password=None):
                     return {"status": "needs_password", "message": "This PDF is password protected"}
                 else:
                     return {"status": "error", "message": str(e)}
-                    
-        # Create a writer for the output file
-        writer = PdfWriter()
         
-        # Add each page to the writer
-        for page in reader.pages:
-            writer.add_page(page)
-            
-        # Write the output PDF without encryption
-        with open(output_path, 'wb') as output_file:
-            writer.write(output_file)
-            
-        # Verify output file was created and has content
-        if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-            return {"status": "success", "message": "PDF unlocked successfully"}
+        # Verify the PDF is not still encrypted
+        if reader.is_encrypted:
+            app.logger.warning("PDF is still encrypted after decrypt attempt with the first approach")
+            # Continue to next approach instead of returning error
         else:
-            return {"status": "error", "message": "Failed to create output file"}
+            # Create a writer for the output file
+            writer = PdfWriter()
             
+            # Add each page to the writer
+            for page in reader.pages:
+                writer.add_page(page)
+            
+            # Write the output PDF without encryption
+            with open(output_path, 'wb') as output_file:
+                writer.write(output_file)
+                
+            # Verify the output file is not encrypted
+            if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                try:
+                    verification_reader = PdfReader(output_path)
+                    if not verification_reader.is_encrypted:
+                        # Success with method 1, clean up and return
+                        _cleanup_temp_files(temp_files)
+                        return {"status": "success", "message": "PDF unlocked successfully"}
+                except Exception:
+                    pass  # If verification fails, try next method
+            
+        # APPROACH 2: Create a new PDF with the content, avoiding encryption metadata
+        tried_methods.append("new_pdf_creation")
+        app.logger.info("Trying second approach: Creating new PDF without encryption metadata")
+        
+        try:
+            # Re-open the original PDF with password
+            if password:
+                original_reader = PdfReader(input_path, password=password)
+                original_reader.decrypt(password)
+            else:
+                original_reader = reader
+                
+            # Create a brand new writer
+            new_writer = PdfWriter()
+            
+            # Copy each page and its contents to ensure no encryption persists
+            for page_num in range(len(original_reader.pages)):
+                page = original_reader.pages[page_num]
+                new_writer.add_page(page)
+            
+            # Write to a different output path
+            method2_output_path = output_path + ".method2"
+            with open(method2_output_path, 'wb') as alt_output_file:
+                new_writer.write(alt_output_file)
+            
+            # If successful, use this as our output
+            if os.path.exists(method2_output_path) and os.path.getsize(method2_output_path) > 0:
+                # Verify it's not encrypted
+                try:
+                    check_reader = PdfReader(method2_output_path)
+                    if not check_reader.is_encrypted:
+                        # Success! Replace the output file
+                        os.replace(method2_output_path, output_path)
+                        # Clean up any remaining temp files
+                        _cleanup_temp_files(temp_files)
+                        return {"status": "success", "message": "PDF unlocked successfully"}
+                except Exception as verify_error:
+                    app.logger.error(f"Second approach verification error: {str(verify_error)}")
+        except Exception as method2_error:
+            app.logger.error(f"Second approach error: {str(method2_error)}")
+        
+        # APPROACH 3: Try using a different encryption method
+        tried_methods.append("alternative_encryption")
+        app.logger.info("Trying third approach: Using alternative encryption approach")
+        
+        try:
+            # Re-open the original PDF with password
+            if password:
+                reader3 = PdfReader(input_path, password=password)
+                if reader3.is_encrypted:
+                    reader3.decrypt(password)
+            else:
+                reader3 = PdfReader(input_path)
+                
+            # Create a new writer
+            writer3 = PdfWriter()
+            
+            # Add each page to the writer
+            for page in reader3.pages:
+                writer3.add_page(page)
+            
+            # Set an empty user password and owner password explicitly
+            # This should effectively remove protection while still creating a valid PDF
+            writer3.encrypt('', '', use_128bit=True)
+            
+            # Remove the encryption to create a fully unlocked PDF
+            writer3._encrypt = None
+            
+            # Write the output
+            method3_output_path = output_path + ".method3"
+            with open(method3_output_path, 'wb') as output_file:
+                writer3.write(output_file)
+            
+            # Verify it worked
+            if os.path.exists(method3_output_path) and os.path.getsize(method3_output_path) > 0:
+                # Check if it's not encrypted
+                try:
+                    check_reader = PdfReader(method3_output_path)
+                    if not check_reader.is_encrypted:
+                        # Success! Replace the output file
+                        os.replace(method3_output_path, output_path)
+                        # Clean up any remaining temp files
+                        _cleanup_temp_files(temp_files)
+                        return {"status": "success", "message": "PDF unlocked successfully"}
+                except Exception as verify_error:
+                    app.logger.error(f"Third approach verification error: {str(verify_error)}")
+        except Exception as method3_error:
+            app.logger.error(f"Third approach error: {str(method3_error)}")
+
+        # APPROACH 4: Specifically target owner password protection
+        tried_methods.append("owner_password_removal")
+        app.logger.info("Trying fourth approach: Owner password removal technique")
+        
+        try:
+            # Try to open the PDF with an empty string as password - sometimes works for owner password
+            try:
+                reader4 = PdfReader(input_path, password='')
+            except:
+                # If that fails, try with the provided password
+                if password:
+                    reader4 = PdfReader(input_path, password=password)
+                else:
+                    # If no password was provided, re-use the original reader
+                    reader4 = reader
+            
+            # Create a new PDF writer
+            writer4 = PdfWriter()
+            
+            # Copy all the pages and their content
+            for page in reader4.pages:
+                writer4.add_page(page)
+            
+            # Transfer any document info (metadata) if it exists
+            if hasattr(reader4, 'metadata') and reader4.metadata is not None:
+                writer4.add_metadata(reader4.metadata)
+            
+            # Copy any document attachments
+            if hasattr(reader4, 'attachments') and reader4.attachments:
+                for attachment in reader4.attachments:
+                    writer4.add_attachment(attachment['filename'], attachment['content'])
+            
+            # Write directly to a new file without encryption
+            # Don't call encrypt() at all - just write without encryption
+            method4_output_path = output_path + ".method4"
+            with open(method4_output_path, 'wb') as output_file:
+                # Use this direct write approach to skip any encryption logic
+                writer4.write(output_file)
+            
+            # Verify the output file is valid and not encrypted
+            if os.path.exists(method4_output_path) and os.path.getsize(method4_output_path) > 0:
+                try:
+                    verification_reader = PdfReader(method4_output_path)
+                    if not verification_reader.is_encrypted:
+                        # Success! Replace the output file
+                        os.replace(method4_output_path, output_path)
+                        # Clean up temporary files
+                        _cleanup_temp_files(temp_files)
+                        return {"status": "success", "message": "PDF unlocked successfully"}
+                except Exception as verify_error:
+                    app.logger.error(f"Fourth approach verification error: {str(verify_error)}")
+        except Exception as method4_error:
+            app.logger.error(f"Fourth approach error: {str(method4_error)}")
+            
+        # Clean up temporary files before returning error
+        _cleanup_temp_files(temp_files)
+            
+        # If we've reached here, all methods have failed
+        return {
+            "status": "error", 
+            "message": "Failed to unlock PDF. The file may have strong encryption or requires a different password."
+        }
     except Exception as e:
-        app.logger.error(f"Error unlocking PDF: {str(e)}")
-        return {"status": "error", "message": f"File has not been decrypted: {str(e)}"}
+        # Clean up temporary files in case of exception
+        _cleanup_temp_files(temp_files)
+        
+        app.logger.error(f"Unlock PDF general error: {str(e)}")
+        return {"status": "error", "message": f"General error: {str(e)}"}
+
+# Helper function to clean up temporary files
+def _cleanup_temp_files(file_paths):
+    for file_path in file_paths:
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                app.logger.debug(f"Removed temporary file: {file_path}")
+        except Exception as e:
+            app.logger.error(f"Failed to remove temporary file {file_path}: {str(e)}")
 
 @app.route('/')
 def index():
@@ -333,6 +461,10 @@ def unlock_with_password():
     
     file_id = data['file_id']
     password = data['password']
+    # Check if this is a request for alternative approach
+    alternative_approach = data.get('alternative_approach', False)
+    # Check if this is a no-password attempt (for owner-password-only PDFs)
+    no_password_attempt = data.get('no_password_attempt', False)
     
     try:
         # Construct the paths
@@ -349,7 +481,173 @@ def unlock_with_password():
         output_filename = f"{output_id}.pdf"
         output_path = os.path.join(app.config['PROCESSED_FOLDER'], output_filename)
         
-        # Try to unlock the PDF with the provided password
+        # Special handling for attempting to unlock with empty password
+        if no_password_attempt:
+            app.logger.info(f"Attempting to unlock file {file_id} without password (owner-password only)")
+            try:
+                # Try to directly open and copy the PDF with an empty password
+                try:
+                    reader = PdfReader(input_path, password='')
+                    writer = PdfWriter()
+                    
+                    # Copy all pages
+                    for page in reader.pages:
+                        writer.add_page(page)
+                    
+                    # Write without encryption
+                    with open(output_path, 'wb') as f:
+                        writer.write(f)
+                    
+                    # Check if successful
+                    success = False
+                    if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                        try:
+                            check = PdfReader(output_path)
+                            if not check.is_encrypted:
+                                success = True
+                        except:
+                            pass
+                    
+                    if success:
+                        # Get original filename
+                        original_filename = protected_files.get(file_id, "document.pdf")
+                        
+                        # Process the file for download
+                        cleaned_filename = clean_filename(original_filename)
+                        prefixed_filename = f"unlocked_{cleaned_filename}"
+                        display_filename = secure_filename(prefixed_filename)
+                        
+                        # Store mapping
+                        processed_files[output_filename] = display_filename
+                        save_processed_files()
+                        
+                        # Cleanup
+                        if os.path.exists(input_path):
+                            os.remove(input_path)
+                        if file_id in protected_files:
+                            del protected_files[file_id]
+                        
+                        return jsonify({
+                            'status': 'success',
+                            'filename': prefixed_filename,
+                            'download_url': f'/download/{output_filename}'
+                        })
+                except Exception as e:
+                    app.logger.warning(f"No-password direct attempt failed: {str(e)}")
+                
+                # If first attempt failed, try the regular unlock_pdf with empty password
+                unlock_result = unlock_pdf(input_path, output_path, '')
+                if unlock_result["status"] == "success":
+                    # Get original filename
+                    original_filename = protected_files.get(file_id, "document.pdf")
+                    
+                    # Process the file for download
+                    cleaned_filename = clean_filename(original_filename)
+                    prefixed_filename = f"unlocked_{cleaned_filename}"
+                    display_filename = secure_filename(prefixed_filename)
+                    
+                    # Store mapping
+                    processed_files[output_filename] = display_filename
+                    save_processed_files()
+                    
+                    # Cleanup
+                    if os.path.exists(input_path):
+                        os.remove(input_path)
+                    if file_id in protected_files:
+                        del protected_files[file_id]
+                    
+                    return jsonify({
+                        'status': 'success',
+                        'filename': prefixed_filename,
+                        'download_url': f'/download/{output_filename}'
+                    })
+                else:
+                    return jsonify({
+                        'status': 'error',
+                        'message': 'This PDF requires a password to unlock.'
+                    })
+            except Exception as e:
+                app.logger.error(f"No-password attempt error: {str(e)}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e)
+                })
+        
+        # If this is an alternative approach request, try a more direct method
+        if alternative_approach:
+            app.logger.info(f"Using alternative direct approach for file {file_id}")
+            
+            try:
+                # Get the original filename from protected_files dictionary
+                original_filename = protected_files.get(file_id, "document.pdf")
+                
+                # Create a specialized writer to bypass encryption
+                try:
+                    # Try to open and decrypt the PDF
+                    reader = PdfReader(input_path, password=password)
+                    if reader.is_encrypted:
+                        reader.decrypt(password)
+                        
+                    # Create a temporary file path
+                    temp_output_path = output_path + ".direct"
+                    
+                    # Create a new writer 
+                    writer = PdfWriter()
+                    
+                    # Add all pages to the writer
+                    for page in reader.pages:
+                        writer.add_page(page)
+                    
+                    # Directly write to the output file without any encrypt calls
+                    with open(temp_output_path, 'wb') as f:
+                        writer.write(f)
+                    
+                    # Check if the file was created and is valid
+                    if os.path.exists(temp_output_path) and os.path.getsize(temp_output_path) > 0:
+                        # Move to the actual output path
+                        os.replace(temp_output_path, output_path)
+                        
+                        # Prepare the filenames for download
+                        cleaned_filename = clean_filename(original_filename)
+                        prefixed_filename = f"unlocked_{cleaned_filename}"
+                        display_filename = secure_filename(prefixed_filename)
+                        
+                        # Store in processed files
+                        processed_files[output_filename] = display_filename
+                        save_processed_files()
+                        
+                        # Cleanup
+                        if os.path.exists(input_path):
+                            os.remove(input_path)
+                        if file_id in protected_files:
+                            del protected_files[file_id]
+                        
+                        # Return success
+                        return jsonify({
+                            'status': 'success',
+                            'filename': prefixed_filename,
+                            'download_url': f'/download/{output_filename}'
+                        })
+                    else:
+                        return jsonify({
+                            'status': 'error',
+                            'message': 'Failed to create unlocked PDF with alternative approach'
+                        })
+                        
+                except Exception as direct_error:
+                    app.logger.error(f"Direct approach error: {str(direct_error)}")
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'Alternative approach failed: {str(direct_error)}'
+                    })
+            except Exception as alt_error:
+                app.logger.error(f"General alternative approach error: {str(alt_error)}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(alt_error)
+                })
+        
+        # Standard approach - use the unlock_pdf function
         unlock_result = unlock_pdf(input_path, output_path, password)
         
         if unlock_result["status"] == "success":
