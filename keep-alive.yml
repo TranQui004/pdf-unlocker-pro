@@ -1,0 +1,28 @@
+name: Keep PDF Unlocker Pro Alive
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'  # Run every 10 minutes
+  workflow_dispatch:        # Allow manual runs when needed
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping website
+        run: |
+          curl -s https://pdf-unlocker-pro.onrender.com > /dev/null
+          echo "Pinged PDF Unlocker Pro at $(date)"
+      
+      - name: Random delay to simulate natural traffic
+        run: |
+          # Add random delay to avoid obvious pinging patterns
+          DELAY=$((RANDOM % 30 + 5))
+          echo "Waiting for $DELAY seconds..."
+          sleep $DELAY
+      
+      - name: Secondary ping to different page
+        run: |
+          # Ping a different page to increase natural traffic
+          curl -s https://pdf-unlocker-pro.onrender.com/faq > /dev/null || true
+          echo "Completed pings at $(date)" 
