@@ -32,6 +32,9 @@
     overflow: hidden;
     animation: modalFadeIn 0.5s forwards;
     margin: auto;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
 }
 
 @keyframes modalFadeIn {
@@ -48,6 +51,7 @@
 .donate-header {
     padding: 1.5rem;
     position: relative;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .donate-close {
@@ -80,7 +84,9 @@
 }
 
 .donate-content {
-    padding: 0 1.5rem 1.5rem;
+    padding: 1.5rem;
+    overflow-y: auto;
+    flex: 1;
 }
 
 .donate-description {
@@ -139,6 +145,7 @@
     border-radius: 0.5rem;
     text-align: center;
     display: none;
+    margin-bottom: 1rem;
 }
 
 .donate-qr-container.show {
