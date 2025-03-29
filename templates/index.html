@@ -828,6 +828,7 @@
                 let successCount = 0;
                 let errorCount = 0;
                 let passwordCount = 0;
+                let processedFileIds = []; // Track which files were processed
                 
                 // Xử lý kết quả
                 results.forEach(result => {
@@ -841,6 +842,11 @@
                             filename: result.filename,
                             url: result.download_url
                         });
+                        
+                        // Add to list of processed file IDs
+                        if (file && file.fileId) {
+                            processedFileIds.push(file.fileId);
+                        }
                         
                         // Đánh dấu file này đã được xử lý để xóa khỏi danh sách
                         if (file) file.processed = true;
@@ -867,8 +873,33 @@
                     }
                 });
                 
-                // Xóa các file đã xử lý thành công khỏi danh sách
+                console.log("Files before filtering:", [...files]);
+                
+                // Xóa các file đã xử lý thành công khỏi danh sách - method 1
                 files = files.filter(file => !file.processed);
+                
+                // Additional forceful method to remove processed files - method 2
+                if (processedFileIds.length > 0) {
+                    files = files.filter(file => !processedFileIds.includes(file.fileId));
+                }
+                
+                // If any files were successfully processed, make sure to force UI update
+                if (successCount > 0) {
+                    // Force clear files that were just unlocked but might still be in array
+                    const filesToRemove = [];
+                    for (let i = 0; i < files.length; i++) {
+                        if (!files[i].passwordProtected && !files[i].hasError) {
+                            filesToRemove.push(i);
+                        }
+                    }
+                    
+                    // Remove from end to beginning to avoid index issues
+                    for (let i = filesToRemove.length - 1; i >= 0; i--) {
+                        files.splice(filesToRemove[i], 1);
+                    }
+                }
+                
+                console.log("Files after filtering:", [...files]);
                 
                 // Cập nhật giao diện
                 updateFileList();
@@ -1356,17 +1387,36 @@
                     });
                     
                     // Find the file in the array and mark it as processed
+                    console.log("Looking for fileId in common passwords function:", fileId, "in files:", files);
                     const fileIndex = files.findIndex(file => file.fileId === fileId);
+                    console.log("Found at index:", fileIndex);
+                    
                     if (fileIndex !== -1) {
                         files[fileIndex].processed = true;
                         // Remove the processed file from the files array
                         files.splice(fileIndex, 1);
-                        // Update the file list display
-                        updateFileList();
+                    } else {
+                        // Try alternative matching if fileId match fails
+                        console.log("Common password success: File not found by fileId, trying backup method");
+                        
+                        // Filter by looking for any file with matching filename
+                        const oldLength = files.length;
+                        files = files.filter(file => {
+                            // Keep file if we can't determine matching criteria
+                            if (!result.filename) return true;
+                            
+                            // Remove if filename matches
+                            return file.name !== result.filename;
+                        });
+                        
+                        if (oldLength !== files.length) {
+                            console.log("Removed file using backup method in common passwords function");
+                        }
                     }
                     
-                    // Update the download list
-                    updateDownloadHistory();
+                    // Force re-update the file list display to reflect removal
+                    updateFileList();
+                    checkEmptyFileList();
                     
                     // Close the modal
                     const passwordModal = document.getElementById('passwordModal');
@@ -1407,19 +1457,41 @@
 
         // Process the next password-protected file
         function processNextPasswordFile() {
+            console.log("Processing next password file. Current files:", files);
+            
+            // Force update UI first to ensure we're working with the latest state
+            updateFileList();
+            checkEmptyFileList();
+            
             // Find the next password-protected file
             const passwordFile = files.find(file => file.passwordProtected);
             
             if (passwordFile && passwordFile.fileId) {
+                console.log("Found next password-protected file:", passwordFile);
                 // Show the password modal for this file
                 showPasswordModal(passwordFile.fileId, passwordFile.name);
             } else {
+                console.log("No more password-protected files found");
                 // No more password-protected files, make sure UI is updated
                 checkEmptyFileList();
                 
                 // If all files are processed, show a success notification
                 if (files.length === 0 && processedFiles.length > 0) {
+                    console.log("All files processed, showing success notification");
                     showNotification('All files have been processed successfully!', 'success');
+                }
+                
+                // Force additional check to clear any lingering files
+                if (files.length > 0) {
+                    console.log("Some files still remain, checking if they should be cleared");
+                    // Check if any remaining files are not password-protected and not errored
+                    // If so, these should have been processed already
+                    const filesToRemove = files.filter(file => !file.passwordProtected && !file.hasError);
+                    if (filesToRemove.length > 0) {
+                        console.log("Found files that should be cleared:", filesToRemove);
+                        files = files.filter(file => file.passwordProtected || file.hasError);
+                        updateFileList();
+                    }
                 }
             }
         }
@@ -1481,14 +1553,37 @@
                     }
                     
                     // Find the file in the array and mark it as processed
+                    console.log("Looking for fileId:", fileId, "in files:", files);
                     const fileIndex = files.findIndex(file => file.fileId === fileId);
+                    console.log("Found at index:", fileIndex);
+                    
                     if (fileIndex !== -1) {
+                        // Mark it as processed and remove it
                         files[fileIndex].processed = true;
+                        
                         // Remove the processed file from the files array
                         files.splice(fileIndex, 1);
-                        // Update the file list display
-                        updateFileList();
+                    } else {
+                        // If we didn't find it by fileId, do a broader search to ensure removal
+                        console.log("File not found by fileId, trying backup removal method");
+                        
+                        // Filter by looking for any file with matching filename
+                        const oldLength = files.length;
+                        files = files.filter(file => {
+                            // Don't remove if we can't match it to the processed file
+                            if (!data.filename) return true;
+                            
+                            // Remove if filename matches
+                            return file.name !== data.filename;
+                        });
+                        
+                        if (oldLength !== files.length) {
+                            console.log("Removed file using backup method");
+                        }
                     }
+                    
+                    // Update the file list display
+                    updateFileList();
                     
                     // Check for more password files to process
                     processNextPasswordFile();
