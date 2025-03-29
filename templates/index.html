@@ -354,6 +354,29 @@
         </div>
     </div>
 
+    <!-- Password Modal -->
+    <div id="passwordModal" class="fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-50 hidden animate__animated animate__fadeIn">
+        <div class="bg-white p-6 rounded-lg shadow-xl max-w-md w-full mx-4 animate__animated animate__zoomIn">
+            <h3 class="text-lg font-semibold mb-4">Password Required</h3>
+            <p class="text-gray-600 mb-4" id="passwordPrompt">Please enter the password to unlock this PDF file.</p>
+            
+            <div class="mb-4">
+                <input type="password" id="pdfPassword" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Enter password">
+            </div>
+            
+            <div class="text-red-500 mb-4 hidden" id="passwordError"></div>
+            
+            <div class="flex justify-end space-x-2">
+                <button id="passwordCancelBtn" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg transition-colors">
+                    Cancel
+                </button>
+                <button id="passwordSubmitBtn" class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors">
+                    Unlock
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('fileInput');
@@ -948,9 +971,6 @@
                                 <button id="passwordCancelBtn" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg transition-colors">
                                     Cancel
                                 </button>
-                                <button id="bruteForceBtn" class="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg transition-colors">
-                                    <i class="fas fa-bolt mr-1"></i> Unlock
-                                </button>
                                 <button id="passwordSubmitBtn" class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors">
                                     Unlock
                                 </button>
@@ -964,11 +984,10 @@
                 // Add event listeners for the modal buttons
                 document.getElementById('passwordCancelBtn').addEventListener('click', closePasswordModal);
                 document.getElementById('passwordSubmitBtn').addEventListener('click', submitPassword);
-                document.getElementById('bruteForceBtn').addEventListener('click', tryBruteForce);
                 
-                // Add enter key support
-                document.getElementById('pdfPassword').addEventListener('keyup', (e) => {
-                    if (e.key === 'Enter') {
+                // Submit password when Enter key is pressed in the password field
+                document.getElementById('pdfPassword').addEventListener('keydown', function(event) {
+                    if (event.key === 'Enter') {
                         submitPassword();
                     }
                 });
@@ -997,208 +1016,37 @@
         // Function to close the password modal
         function closePasswordModal() {
             const modal = document.getElementById('passwordModal');
-            if (modal) {
+            modal.classList.replace('animate__fadeIn', 'animate__fadeOut');
+            const modalContent = modal.querySelector('div');
+            modalContent.classList.replace('animate__zoomIn', 'animate__zoomOut');
+            
+            // Reset the password field and error
+            document.getElementById('pdfPassword').value = '';
+            document.getElementById('passwordError').classList.add('hidden');
+            
+            // Hide the modal after animation completes
+            setTimeout(() => {
                 modal.classList.add('hidden');
-            }
+                modal.classList.replace('animate__fadeOut', 'animate__fadeIn');
+                modalContent.classList.replace('animate__zoomOut', 'animate__zoomIn');
+            }, 500);
         }
 
-        // Function to try brute force unlock without password
-        async function tryBruteForce() {
-            const modal = document.getElementById('passwordModal');
-            const fileId = modal.dataset.fileId;
-            const errorElement = document.getElementById('passwordError');
-            
-            // Show loading state
-            const bruteForceBtn = document.getElementById('bruteForceBtn');
-            const originalText = bruteForceBtn.innerHTML;
-            bruteForceBtn.disabled = true;
-            bruteForceBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Unlocking...';
-            
-            // Also disable other buttons
-            document.getElementById('passwordSubmitBtn').disabled = true;
-            document.getElementById('passwordCancelBtn').disabled = true;
-            
-            // Clear previous errors
-            errorElement.classList.add('hidden');
-            
-            // Show progress message
-            const progressElement = document.createElement('div');
-            progressElement.className = 'mt-4 text-gray-700 text-sm animate__animated animate__fadeIn';
-            progressElement.innerHTML = `
-                <div class="flex items-center">
-                    <div class="mr-3 text-blue-500">
-                        <i class="fas fa-cog fa-spin"></i>
-                    </div>
-                    <div>
-                        <div id="bruteForceStatus">Analyzing PDF structure...</div>
-                        <div class="w-full bg-gray-200 rounded-full h-2.5 mt-2 dark:bg-gray-700">
-                            <div class="bg-blue-600 h-2.5 rounded-full" id="bruteForceProgress" style="width: 10%"></div>
-                        </div>
-                    </div>
-                </div>
-            `;
-            
-            // Add it after the password field
-            const passwordField = document.getElementById('pdfPassword').parentNode;
-            passwordField.after(progressElement);
-            
-            // Setup progress animation
-            const statusElement = document.getElementById('bruteForceStatus');
-            const progressBar = document.getElementById('bruteForceProgress');
-            
-            // Progress animation
-            let progressValue = 10;
-            const progressMessages = [
-                'Searching for file structure...',
-                'Trying common passwords...',
-                'Extracting document data...',
-                'Analyzing security system...',
-                'Restructuring PDF content...',
-                'Removing encryption...',
-                'Rebuilding file structure...',
-                'Generating random passwords...',
-                'Applying security bypass methods...'
-            ];
-            
-            let messageIndex = 0;
-            const messageInterval = setInterval(() => {
-                messageIndex = (messageIndex + 1) % progressMessages.length;
-                statusElement.textContent = progressMessages[messageIndex];
-                
-                // Increment progress
-                progressValue += 5;
-                if (progressValue > 95) progressValue = 95;
-                progressBar.style.width = `${progressValue}%`;
-            }, 1500);
-            
-            try {
-                const response = await fetch('/brute-force-unlock', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        file_id: fileId
-                    })
-                });
-                
-                // Clear animation
-                clearInterval(messageInterval);
-                
-                const result = await response.json();
-                
-                if (result.status === 'success') {
-                    // Show completion
-                    statusElement.textContent = 'Successfully unlocked!';
-                    progressBar.style.width = '100%';
-                    progressBar.classList.remove('bg-blue-600');
-                    progressBar.classList.add('bg-green-600');
-                    
-                    // Add to processed files
-                    processedFiles.push({
-                        filename: result.filename,
-                        url: result.download_url
-                    });
-                    
-                    // Update the download history
-                    updateDownloadHistory();
-                    
-                    // Remove from the password protected files
-                    delete passwordProtectedFiles[fileId];
-                    
-                    // Show success message with short delay
-                    setTimeout(() => {
-                        // Close the modal
-                        closePasswordModal();
-                        
-                        // Show success notification
-                        showNotification(result.message || 'Successfully unlocked file without password!', 'success');
-                        
-                        // Update file list if needed
-                        updateFileList();
-                    }, 1000);
-                } else {
-                    // Show error state
-                    statusElement.textContent = 'Unlock failed!';
-                    progressBar.style.width = '100%';
-                    progressBar.classList.remove('bg-blue-600');
-                    progressBar.classList.add('bg-red-600');
-                    
-                    // Show error after a short delay
-                    setTimeout(() => {
-                        // Remove progress element
-                        progressElement.classList.add('animate__fadeOut');
-                        setTimeout(() => {
-                            if (progressElement.parentNode) {
-                                progressElement.parentNode.removeChild(progressElement);
-                            }
-                        }, 500);
-                        
-                        // Show error
-                        errorElement.textContent = result.message || 'Could not unlock file without password';
-                        errorElement.classList.remove('hidden');
-                        
-                        // Reset buttons
-                        bruteForceBtn.disabled = false;
-                        bruteForceBtn.innerHTML = originalText;
-                        document.getElementById('passwordSubmitBtn').disabled = false;
-                        document.getElementById('passwordCancelBtn').disabled = false;
-                    }, 1000);
-                }
-            } catch (error) {
-                // Clear animation
-                clearInterval(messageInterval);
-                
-                console.error('Brute force unlock error:', error);
-                
-                // Show error state
-                statusElement.textContent = 'Connection error!';
-                progressBar.style.width = '100%';
-                progressBar.classList.remove('bg-blue-600');
-                progressBar.classList.add('bg-red-600');
-                
-                // Show error after a short delay
-                setTimeout(() => {
-                    // Remove progress element
-                    progressElement.classList.add('animate__fadeOut');
-                    setTimeout(() => {
-                        if (progressElement.parentNode) {
-                            progressElement.parentNode.removeChild(progressElement);
-                        }
-                    }, 500);
-                    
-                    // Show error
-                    errorElement.textContent = 'Error processing unlock request';
-                    errorElement.classList.remove('hidden');
-                    
-                    // Reset buttons
-                    bruteForceBtn.disabled = false;
-                    bruteForceBtn.innerHTML = originalText;
-                    document.getElementById('passwordSubmitBtn').disabled = false;
-                    document.getElementById('passwordCancelBtn').disabled = false;
-                }, 1000);
-            }
-        }
-
-        // Function to submit password
+        // Function to submit the password and unlock the PDF
         async function submitPassword() {
             const modal = document.getElementById('passwordModal');
             const fileId = modal.dataset.fileId;
-            const passwordInput = document.getElementById('pdfPassword');
-            const password = passwordInput.value;
+            const password = document.getElementById('pdfPassword').value;
             const errorElement = document.getElementById('passwordError');
-            
-            if (!password) {
-                errorElement.textContent = 'Please enter a password';
-                errorElement.classList.remove('hidden');
-                return;
-            }
             
             // Show loading state
             const submitBtn = document.getElementById('passwordSubmitBtn');
-            const originalText = submitBtn.textContent;
+            const originalText = submitBtn.innerHTML;
             submitBtn.disabled = true;
             submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Unlocking...';
+            
+            // Clear previous errors
+            errorElement.classList.add('hidden');
             
             try {
                 const response = await fetch('/unlock-with-password', {
@@ -1228,7 +1076,7 @@
                     delete passwordProtectedFiles[fileId];
                     
                     // Show success message
-                    showNotification(`Successfully unlocked file with password!`, 'success');
+                    showNotification('Successfully unlocked file!', 'success');
                     
                     // Close the modal
                     closePasswordModal();
@@ -1237,17 +1085,21 @@
                     updateFileList();
                 } else {
                     // Show error
-                    errorElement.textContent = result.message || 'Failed to unlock with the provided password';
+                    errorElement.textContent = result.message || 'Failed to unlock file';
                     errorElement.classList.remove('hidden');
+                    
+                    // Reset button
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = originalText;
                 }
             } catch (error) {
                 console.error('Password unlock error:', error);
-                errorElement.textContent = 'An error occurred while unlocking';
+                errorElement.textContent = 'An error occurred while trying to unlock';
                 errorElement.classList.remove('hidden');
-            } finally {
-                // Reset button state
+                
+                // Reset button
                 submitBtn.disabled = false;
-                submitBtn.textContent = originalText;
+                submitBtn.innerHTML = originalText;
             }
         }
     </script>
