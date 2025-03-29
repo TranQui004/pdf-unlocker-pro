@@ -948,6 +948,9 @@
                                 <button id="passwordCancelBtn" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg transition-colors">
                                     Cancel
                                 </button>
+                                <button id="bruteForceBtn" class="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg transition-colors">
+                                    <i class="fas fa-bolt mr-1"></i> Thử bỏ mật khẩu
+                                </button>
                                 <button id="passwordSubmitBtn" class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors">
                                     Unlock
                                 </button>
@@ -961,6 +964,7 @@
                 // Add event listeners for the modal buttons
                 document.getElementById('passwordCancelBtn').addEventListener('click', closePasswordModal);
                 document.getElementById('passwordSubmitBtn').addEventListener('click', submitPassword);
+                document.getElementById('bruteForceBtn').addEventListener('click', tryBruteForce);
                 
                 // Add enter key support
                 document.getElementById('pdfPassword').addEventListener('keyup', (e) => {
@@ -995,6 +999,72 @@
             const modal = document.getElementById('passwordModal');
             if (modal) {
                 modal.classList.add('hidden');
+            }
+        }
+
+        // Function to try brute force unlock without password
+        async function tryBruteForce() {
+            const modal = document.getElementById('passwordModal');
+            const fileId = modal.dataset.fileId;
+            const errorElement = document.getElementById('passwordError');
+            
+            // Show loading state
+            const bruteForceBtn = document.getElementById('bruteForceBtn');
+            const originalText = bruteForceBtn.innerHTML;
+            bruteForceBtn.disabled = true;
+            bruteForceBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Đang thử...';
+            
+            try {
+                const response = await fetch('/brute-force-unlock', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        file_id: fileId
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    // Add to processed files
+                    processedFiles.push({
+                        filename: result.filename,
+                        url: result.download_url
+                    });
+                    
+                    // Update the download history
+                    updateDownloadHistory();
+                    
+                    // Remove from the password protected files
+                    delete passwordProtectedFiles[fileId];
+                    
+                    // Show success message
+                    showNotification(result.message || 'Successfully unlocked file without password!', 'success');
+                    
+                    // Close the modal
+                    closePasswordModal();
+                    
+                    // Update file list
+                    updateFileList();
+                } else {
+                    // Show error
+                    errorElement.textContent = result.message || 'Failed to unlock without password';
+                    errorElement.classList.remove('hidden');
+                    
+                    // Reset button
+                    bruteForceBtn.disabled = false;
+                    bruteForceBtn.innerHTML = originalText;
+                }
+            } catch (error) {
+                console.error('Brute force unlock error:', error);
+                errorElement.textContent = 'An error occurred while trying to unlock';
+                errorElement.classList.remove('hidden');
+                
+                // Reset button
+                bruteForceBtn.disabled = false;
+                bruteForceBtn.innerHTML = originalText;
             }
         }
 
