@@ -11,6 +11,7 @@ import zipfile
 import io
 import json
 from urllib.parse import unquote
+import base64
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
@@ -62,6 +63,9 @@ PROCESSED_FILES_DB = os.path.join(DATA_FOLDER, 'processed_files.json')
 
 # Dictionary to track processed files
 processed_files = {}
+
+# Dictionary to track password-protected files
+protected_files = {}
 
 # Load processed files data from file if it exists
 def load_processed_files():
@@ -115,23 +119,53 @@ def clean_filename(filename):
         
     return cleaned_name
 
-def unlock_pdf(input_path, output_path):
+def unlock_pdf(input_path, output_path, password=None):
     try:
-        reader = PdfReader(input_path)
+        # First attempt to open PDF with password if provided
+        if password:
+            try:
+                reader = PdfReader(input_path, password=password)
+                # Check if document is still encrypted after providing password
+                if reader.is_encrypted:
+                    return {"status": "error", "message": "Incorrect password"}
+            except Exception as e:
+                if "password" in str(e).lower():
+                    return {"status": "error", "message": "Incorrect password"}
+                else:
+                    return {"status": "error", "message": str(e)}
+        else:
+            # Try to open without password
+            try:
+                reader = PdfReader(input_path)
+                # Check if document is encrypted - needs password
+                if reader.is_encrypted:
+                    return {"status": "needs_password", "message": "This PDF is password protected"}
+            except Exception as e:
+                if "password" in str(e).lower():
+                    return {"status": "needs_password", "message": "This PDF is password protected"}
+                else:
+                    return {"status": "error", "message": str(e)}
+                    
+        # Create a writer for the output file
         writer = PdfWriter()
         
+        # Add each page to the writer
         for page in reader.pages:
             writer.add_page(page)
-        
-        # Remove all restrictions
-        writer.encrypt('', '')
-        
+            
+        # Write the output PDF without encryption
         with open(output_path, 'wb') as output_file:
             writer.write(output_file)
-        return True
+            
+        # Verify output file was created and has content
+        if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+            return {"status": "success", "message": "PDF unlocked successfully"}
+        else:
+            return {"status": "error", "message": "Failed to create output file"}
+            
     except Exception as e:
-        print(f"Error unlocking PDF: {str(e)}")
-        return False
+        app.logger.error(f"Error unlocking PDF: {str(e)}")
+        return {"status": "error", "message": f"File has not been decrypted: {str(e)}"}
 
 @app.route('/')
 def index():
@@ -141,6 +175,9 @@ def index():
 def unlock():
     if 'files[]' not in request.files:
         return jsonify({'error': 'No files uploaded'}), 400
+    
+    # Get password if provided
+    password = request.form.get('password')
     
     files = request.files.getlist('files[]')
     results = []
@@ -178,26 +215,43 @@ def unlock():
             # Save original file
             file.save(input_path)
             
-            # Store the mapping between output ID and prefixed filename for download
-            display_filename = secure_filename(prefixed_filename)
-            processed_files[output_filename] = display_filename
-            save_processed_files()  # Save the updated processed files dictionary
+            # Attempt to unlock the PDF
+            unlock_result = unlock_pdf(input_path, output_path, password)
             
-            if unlock_pdf(input_path, output_path):
+            if unlock_result["status"] == "success":
+                # Store the mapping between output ID and prefixed filename for download
+                display_filename = secure_filename(prefixed_filename)
+                processed_files[output_filename] = display_filename
+                save_processed_files()  # Save the updated processed files dictionary
+                
                 results.append({
                     'filename': prefixed_filename,
                     'status': 'success',
                     'download_url': f'/download/{output_filename}'
                 })
+            elif unlock_result["status"] == "needs_password":
+                # Store original filename for later use
+                global protected_files
+                protected_files[input_filename] = file.filename
+                
+                # Return a status indicating password is needed
+                results.append({
+                    'filename': file.filename,
+                    'status': 'needs_password',
+                    'message': 'This PDF is password protected',
+                    'file_id': input_filename  # Send back the ID to reference this file
+                })
             else:
+                # Some other error occurred
                 results.append({
                     'filename': file.filename,
                     'status': 'error',
-                    'message': 'Failed to unlock PDF'
+                    'message': unlock_result["message"]
                 })
             
-            # Cleanup input file
-            if os.path.exists(input_path):
+            # Cleanup input file if it's not password protected
+            # If password protected, we'll keep it for when they provide a password
+            if unlock_result["status"] != "needs_password" and os.path.exists(input_path):
                 os.remove(input_path)
                 
         except Exception as e:
@@ -208,6 +262,74 @@ def unlock():
             })
     
     return jsonify(results)
+
+@app.route('/unlock-with-password', methods=['POST'])
+def unlock_with_password():
+    global protected_files
+    
+    data = request.json
+    if not data or 'file_id' not in data or 'password' not in data:
+        return jsonify({'error': 'Missing file_id or password'}), 400
+    
+    file_id = data['file_id']
+    password = data['password']
+    
+    try:
+        # Construct the paths
+        input_path = os.path.join(app.config['UPLOAD_FOLDER'], file_id)
+        
+        if not os.path.exists(input_path):
+            return jsonify({
+                'status': 'error',
+                'message': 'File not found or expired'
+            }), 404
+            
+        # Generate a unique ID for the output file
+        output_id = str(uuid.uuid4())
+        output_filename = f"{output_id}.pdf"
+        output_path = os.path.join(app.config['PROCESSED_FOLDER'], output_filename)
+        
+        # Try to unlock the PDF with the provided password
+        unlock_result = unlock_pdf(input_path, output_path, password)
+        
+        if unlock_result["status"] == "success":
+            # Get the original filename from our protected_files dictionary
+            original_filename = protected_files.get(file_id, "document.pdf")
+            
+            # Clean and prefix the filename
+            cleaned_filename = clean_filename(original_filename)
+            prefixed_filename = f"unlocked_{cleaned_filename}"
+            
+            # Store the mapping between output ID and prefixed filename for download
+            display_filename = secure_filename(prefixed_filename)
+            processed_files[output_filename] = display_filename
+            save_processed_files()  # Save the updated processed files dictionary
+            
+            # Cleanup the input file and remove from tracking
+            if os.path.exists(input_path):
+                os.remove(input_path)
+            
+            # Remove from protected files tracking
+            if file_id in protected_files:
+                del protected_files[file_id]
+                
+            return jsonify({
+                'status': 'success',
+                'filename': prefixed_filename,
+                'download_url': f'/download/{output_filename}'
+            })
+        else:
+            return jsonify({
+                'status': unlock_result["status"],
+                'message': unlock_result["message"]
+            })
+            
+    except Exception as e:
+        app.logger.error(f"Error unlocking with password: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
 
 @app.route('/download/<filename>')
 def download(filename):
