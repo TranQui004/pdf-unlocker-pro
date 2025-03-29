@@ -46,6 +46,35 @@
             background: linear-gradient(135deg, #3b82f6 0%, #10b981 100%);
             transition: width 0.3s ease;
         }
+        .debug-panel {
+            background-color: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            margin-top: 20px;
+            display: none;
+        }
+        
+        .debug-panel h5 {
+            color: #dc3545;
+            margin-bottom: 10px;
+        }
+        
+        .debug-panel pre {
+            background-color: #343a40;
+            color: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .debug-btn {
+            margin-top: 10px;
+            color: #fff;
+            background-color: #6c757d;
+            border-color: #6c757d;
+        }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
@@ -350,6 +379,26 @@
                 <button id="acceptDisclaimerBtn" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors">
                     I Understand
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Password Modal -->
+    <div id="passwordModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h4>Password Required</h4>
+            <p>This PDF is password-protected. Please enter the password to unlock it.</p>
+            <div class="form-group">
+                <input type="password" id="pdfPassword" class="form-control" placeholder="Enter password">
+            </div>
+            <button id="unlockBtn" class="btn btn-primary">Unlock PDF</button>
+            
+            <!-- Debug section (only visible in development) -->
+            <div id="debugPanel" class="debug-panel">
+                <h5>Debug Information</h5>
+                <pre id="debugOutput">No debug information available.</pre>
+                <button id="tryCommonBtn" class="btn debug-btn">Try Common Passwords</button>
             </div>
         </div>
     </div>
@@ -1340,6 +1389,188 @@
                 submitBtn.textContent = originalText;
             }
         }
+
+        // Password handling for protected PDFs
+        function unlockWithPassword(fileId) {
+            const passwordInput = document.getElementById('pdfPassword');
+            const password = passwordInput.value.trim();
+            
+            if (!password) {
+                notification('Please enter a password', 'warning');
+                return;
+            }
+            
+            notification('Unlocking PDF...', 'info');
+            
+            const data = {
+                file_id: fileId,
+                password: password,
+                debug_info: true // Add debug info flag
+            };
+            
+            fetch('/unlock-with-password', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Add debug information if available
+                if (data.debug_info) {
+                    showDebugInfo(data.debug_info, password);
+                }
+                
+                // Process the response
+                if (data.status === 'success') {
+                    notification('PDF unlocked successfully!', 'success');
+                    addToProcessedList(data.filename, data.download_url);
+                    document.getElementById('passwordModal').style.display = 'none';
+                    
+                    // Remove from the upload list
+                    const uploadList = document.getElementById('uploadList');
+                    const items = uploadList.getElementsByTagName('li');
+                    for (let i = 0; i < items.length; i++) {
+                        if (items[i].getAttribute('data-file-id') === fileId) {
+                            uploadList.removeChild(items[i]);
+                            break;
+                        }
+                    }
+                    
+                    // If no more files in the list, hide the upload section
+                    if (uploadList.children.length === 0) {
+                        document.getElementById('uploadSection').style.display = 'none';
+                    }
+                    
+                    // Show the download section
+                    document.getElementById('downloadSection').style.display = 'block';
+                } else if (data.status === 'error') {
+                    if (data.error.includes('incorrect password')) {
+                        notification('Incorrect password. Please try again.', 'error');
+                    } else {
+                        notification('Error: ' + data.error, 'error');
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                notification('An error occurred while unlocking the PDF.', 'error');
+            });
+        }
+        
+        // Function to show debug information
+        function showDebugInfo(debugInfo, password) {
+            // Show the debug panel
+            const debugPanel = document.getElementById('debugPanel');
+            if (debugPanel) {
+                debugPanel.style.display = 'block';
+                
+                // Format and display the debug info
+                const debugOutput = document.getElementById('debugOutput');
+                let debugText = `Password attempted: "${password}"\n`;
+                debugText += `Password type: ${typeof password}\n`;
+                debugText += `Password length: ${password.length}\n\n`;
+                
+                if (typeof debugInfo === 'object') {
+                    debugText += JSON.stringify(debugInfo, null, 2);
+                } else {
+                    debugText += debugInfo;
+                }
+                
+                debugOutput.textContent = debugText;
+            }
+        }
+        
+        // Function to try common passwords
+        function tryCommonPasswords(fileId) {
+            const commonPasswords = ['123', '1234', '12345', '123456', 'password', 'admin', '0000'];
+            let currentIndex = 0;
+            
+            notification('Trying common passwords...', 'info');
+            
+            function tryNextPassword() {
+                if (currentIndex >= commonPasswords.length) {
+                    notification('None of the common passwords worked.', 'warning');
+                    return;
+                }
+                
+                const password = commonPasswords[currentIndex];
+                currentIndex++;
+                
+                const data = {
+                    file_id: fileId,
+                    password: password,
+                    debug_info: true
+                };
+                
+                fetch('/unlock-with-password', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // Add debug information
+                    if (data.debug_info) {
+                        showDebugInfo(data.debug_info, password);
+                    }
+                    
+                    if (data.status === 'success') {
+                        notification(`PDF unlocked successfully with password: ${password}`, 'success');
+                        addToProcessedList(data.filename, data.download_url);
+                        document.getElementById('passwordModal').style.display = 'none';
+                        
+                        // Update UI and remove from upload list
+                        const uploadList = document.getElementById('uploadList');
+                        const items = uploadList.getElementsByTagName('li');
+                        for (let i = 0; i < items.length; i++) {
+                            if (items[i].getAttribute('data-file-id') === fileId) {
+                                uploadList.removeChild(items[i]);
+                                break;
+                            }
+                        }
+                        
+                        if (uploadList.children.length === 0) {
+                            document.getElementById('uploadSection').style.display = 'none';
+                        }
+                        
+                        document.getElementById('downloadSection').style.display = 'block';
+                    } else {
+                        console.log(`Password "${password}" failed. Trying next...`);
+                        tryNextPassword();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    tryNextPassword(); // Try next password even if there's an error
+                });
+            }
+            
+            tryNextPassword();
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            // ... existing code ...
+            
+            // Add event listener for the try common passwords button
+            document.getElementById('tryCommonBtn').addEventListener('click', function() {
+                const currentFileId = document.getElementById('unlockBtn').getAttribute('data-file-id');
+                tryCommonPasswords(currentFileId);
+            });
+            
+            // Check if we're in development mode
+            const hostname = window.location.hostname;
+            if (hostname === 'localhost' || hostname === '127.0.0.1') {
+                // We're in development
+                const debugElements = document.querySelectorAll('.debug-panel');
+                debugElements.forEach(el => {
+                    el.style.display = 'block';
+                });
+            }
+        });
     </script>
     <script src="{{ url_for('static', filename='js/payment_info.js') }}"></script>
     <script src="{{ url_for('static', filename='js/donate.js') }}"></script>
