@@ -756,7 +756,7 @@
                         <span class="text-gray-800 truncate" title="${file.filename}">${file.filename}</span>
                     </div>
                     <div class="flex items-center">
-                        <a href="${file.url}" download class="text-blue-500 hover:text-blue-700 transition-colors px-3 py-1 flex items-center">
+                        <a href="javascript:void(0)" onclick="downloadFileWithCheck('${file.url}', '${file.filename}')" class="text-blue-500 hover:text-blue-700 transition-colors px-3 py-1 flex items-center">
                             <i class="fas fa-download mr-1"></i> Download
                         </a>
                         <button class="text-gray-400 hover:text-red-500 transition-colors ml-2" onclick="removeFromHistory(${index})">
@@ -810,7 +810,8 @@
                 
                 // Download the ZIP file
                 setTimeout(() => {
-                    window.location.href = result.download_url;
+                    const zipFilename = result.download_url.split('/').pop();
+                    downloadFileWithCheck(result.download_url, "unlocked_pdfs.zip");
                 }, 1000);
                 
             } catch (error) {
@@ -1571,6 +1572,89 @@
                 });
             }
         });
+
+        // Hàm kiểm tra tệp có tồn tại không
+        function checkFileExists(filename) {
+            return fetch(`/check-file/${filename}`)
+                .then(response => response.json())
+                .then(data => {
+                    return {
+                        exists: data.exists === true,
+                        message: data.message || 'Tệp không tồn tại hoặc đã hết hạn.'
+                    };
+                })
+                .catch(error => {
+                    console.error('Error checking file:', error);
+                    return { exists: false, message: 'Lỗi kiểm tra tệp.' };
+                });
+        }
+        
+        // Tải xuống file với kiểm tra trước
+        function downloadFileWithCheck(url, filename) {
+            // Lấy tên file từ URL
+            const parts = url.split('/');
+            const fileId = parts[parts.length - 1];
+            
+            // Kiểm tra tệp trước khi tải xuống
+            checkFileExists(fileId)
+                .then(response => {
+                    if (response.exists) {
+                        // Tạo link và click để tải
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = filename || 'download';
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                    } else {
+                        // Hiển thị thông báo lỗi
+                        notification(`Không thể tải xuống: ${response.message}`, 'error');
+                        
+                        // Xóa tệp khỏi danh sách hiển thị
+                        refreshProcessedFiles();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error checking file:', error);
+                    notification('Lỗi kiểm tra tệp. Vui lòng thử lại.', 'error');
+                });
+        }
+        
+        // Tìm và thay thế toàn bộ hàm addToProcessedList cũ
+        function _old_addToProcessedList(filename, downloadUrl) {
+            // Hàm cũ đã được thay thế, chỉ gọi hàm mới
+            addToProcessedList(filename, downloadUrl);
+        }
+
+        // Function to refresh the list of processed files from server
+        async function refreshProcessedFiles() {
+            try {
+                const response = await fetch('/get-processed-files');
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    // Clear existing processed files
+                    processedFiles.length = 0;
+                    
+                    if (data.files && data.files.length > 0) {
+                        // Add each file to the processedFiles array
+                        data.files.forEach(file => {
+                            processedFiles.push({
+                                filename: file.display_name,
+                                url: file.download_url
+                            });
+                        });
+                    }
+                    
+                    // Update the UI
+                    updateDownloadHistory();
+                }
+            } catch (error) {
+                console.error('Error refreshing processed files:', error);
+                showNotification('Failed to refresh file list', 'error');
+            }
+        }
     </script>
     <script src="{{ url_for('static', filename='js/payment_info.js') }}"></script>
     <script src="{{ url_for('static', filename='js/donate.js') }}"></script>
