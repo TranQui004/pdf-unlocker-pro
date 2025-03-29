@@ -1,5 +1,6 @@
 import os
 import stat
+import platform
 from flask import Flask, request, render_template, send_file, jsonify
 from werkzeug.utils import secure_filename
 from PyPDF2 import PdfReader, PdfWriter
@@ -12,6 +13,13 @@ import io
 import json
 from urllib.parse import unquote
 import base64
+
+# Detect if we're on Render.com
+IS_RENDER = os.environ.get('RENDER') == 'true'
+# Print environment details for debugging
+print(f"Running on: {platform.system()} {platform.release()}")
+print(f"Python version: {platform.python_version()}")
+print(f"Is Render: {IS_RENDER}")
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
@@ -137,12 +145,40 @@ def unlock_pdf(input_path, output_path, password=None):
         # First attempt to open PDF with password if provided
         if password:
             try:
-                reader = PdfReader(input_path, password=password)
-                # Explicitly decrypt the PDF with the provided password
-                if reader.is_encrypted:
-                    # This will raise an exception if the password is wrong
-                    reader.decrypt(password)
+                # Try different password encodings if necessary (production environments might have encoding issues)
+                try:
+                    # First try with the password as provided
+                    app.logger.info(f"Attempting to decrypt with password as provided")
+                    reader = PdfReader(input_path, password=password)
+                    if reader.is_encrypted:
+                        reader.decrypt(password)
+                except Exception as e1:
+                    app.logger.warning(f"First password attempt failed: {str(e1)}")
+                    # Try encoding password as UTF-8 explicitly
+                    try:
+                        app.logger.info(f"Attempting with UTF-8 encoded password")
+                        pwd_utf8 = password.encode('utf-8').decode('utf-8')
+                        reader = PdfReader(input_path, password=pwd_utf8)
+                        if reader.is_encrypted:
+                            reader.decrypt(pwd_utf8)
+                    except Exception as e2:
+                        app.logger.warning(f"UTF-8 password attempt failed: {str(e2)}")
+                        # Try with ISO-8859-1 encoding
+                        try:
+                            app.logger.info(f"Attempting with ISO-8859-1 encoded password")
+                            pwd_latin = password.encode('iso-8859-1').decode('iso-8859-1')
+                            reader = PdfReader(input_path, password=pwd_latin)
+                            if reader.is_encrypted:
+                                reader.decrypt(pwd_latin)
+                        except Exception as e3:
+                            # If all attempts fail, raise the original error
+                            app.logger.error(f"All password encoding attempts failed")
+                            raise e1
+                
+                # If we get here, one of the attempts succeeded
+                app.logger.info("Successfully opened PDF with password")
             except Exception as e:
+                app.logger.error(f"Password error: {str(e)}")
                 if "password" in str(e).lower():
                     return {"status": "error", "message": "Incorrect password"}
                 else:
@@ -227,6 +263,69 @@ def unlock_pdf(input_path, output_path, password=None):
                     app.logger.error(f"Second approach verification error: {str(verify_error)}")
         except Exception as method2_error:
             app.logger.error(f"Second approach error: {str(method2_error)}")
+        
+        # RENDER-SPECIFIC APPROACH: Use a simplified approach for Render environment
+        if IS_RENDER:
+            tried_methods.append("render_specific")
+            app.logger.info("Trying Render-specific approach")
+            
+            try:
+                # More direct approach for Render - sometimes the environment needs simpler methods
+                render_output_path = output_path + ".render"
+                
+                try:
+                    # Open PDF with password
+                    if password:
+                        # Try with multiple encodings for Render environment
+                        try_passwords = [
+                            password, 
+                            password.encode('utf-8').decode('utf-8'),
+                            password.encode('ascii', errors='replace').decode('ascii')
+                        ]
+                        
+                        success = False
+                        render_reader = None
+                        for pwd in try_passwords:
+                            try:
+                                render_reader = PdfReader(input_path, password=pwd)
+                                if render_reader.is_encrypted:
+                                    render_reader.decrypt(pwd)
+                                if not render_reader.is_encrypted:
+                                    success = True
+                                    app.logger.info(f"Password worked on Render")
+                                    break
+                            except Exception as pwd_error:
+                                app.logger.warning(f"Password attempt failed on Render: {str(pwd_error)}")
+                                continue
+                        
+                        if not success:
+                            app.logger.error("All password attempts failed on Render")
+                            return {"status": "error", "message": "Incorrect password (Render)"}
+                    else:
+                        render_reader = reader
+                    
+                    # Create a simple writer
+                    render_writer = PdfWriter()
+                    
+                    # Copy all pages directly
+                    for page in render_reader.pages:
+                        render_writer.add_page(page)
+                        
+                    # Write to output without any encryption calls at all
+                    with open(render_output_path, 'wb') as f:
+                        render_writer.write(f)
+                    
+                    # If file exists and has content, use it
+                    if os.path.exists(render_output_path) and os.path.getsize(render_output_path) > 0:
+                        os.replace(render_output_path, output_path)
+                        _cleanup_temp_files(temp_files)
+                        return {"status": "success", "message": "PDF unlocked successfully (Render)"}
+                
+                except Exception as render_inner_error:
+                    app.logger.error(f"Render approach inner error: {str(render_inner_error)}")
+            
+            except Exception as render_error:
+                app.logger.error(f"Render approach error: {str(render_error)}")
         
         # APPROACH 3: Try using a different encryption method
         tried_methods.append("alternative_encryption")
@@ -465,12 +564,32 @@ def unlock_with_password():
     alternative_approach = data.get('alternative_approach', False)
     # Check if this is a no-password attempt (for owner-password-only PDFs)
     no_password_attempt = data.get('no_password_attempt', False)
+    # Check if ASCII mode was used (helps with special characters)
+    ascii_mode = data.get('ascii_mode', False)
+    
+    # Enhanced logging for production debugging
+    app.logger.info(f"Password submitted for file_id: {file_id}")
+    app.logger.info(f"Password length: {len(password)}")
+    app.logger.info(f"Password first/last char: {password[0] if password else ''}/{password[-1] if password else ''}")
+    app.logger.info(f"ASCII mode: {ascii_mode}")
+    
+    # For ASCII mode, ensure proper encoding 
+    if ascii_mode:
+        app.logger.info("ASCII mode is enabled, ensuring clean password")
+        # Additional safety processing for ASCII-mode passwords
+        try:
+            # Ensure it's pure ASCII to avoid encoding issues on the server
+            password = password.encode('ascii', errors='replace').decode('ascii')
+            app.logger.info(f"ASCII cleaned password length: {len(password)}")
+        except Exception as e:
+            app.logger.error(f"Error in ASCII cleaning: {str(e)}")
     
     try:
         # Construct the paths
         input_path = os.path.join(app.config['UPLOAD_FOLDER'], file_id)
         
         if not os.path.exists(input_path):
+            app.logger.error(f"File not found: {input_path}")
             return jsonify({
                 'status': 'error',
                 'message': 'File not found or expired'

@@ -610,6 +610,8 @@
                 }
 
                 const results = await response.json();
+                console.log("Server response:", results); // Debug information
+                
                 let successCount = 0;
                 let errorCount = 0;
                 let passwordCount = 0;
@@ -966,12 +968,23 @@
                                     <li>Try the document owner's password</li>
                                     <li>For academic papers, try "author" or the last name of the first author</li>
                                     <li>Some PDFs only have "owner" restrictions that can be unlocked without a password</li>
+                                    <li>If your password contains special characters and doesn't work, try the ASCII option below</li>
                                 </ul>
                             </div>
                             <div class="mb-4">
                                 <input type="password" id="pdfPassword" 
                                     class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" 
                                     placeholder="Enter password">
+                                <div class="flex items-center mt-2">
+                                    <input type="checkbox" id="useAsciiMode" class="mr-2">
+                                    <label for="useAsciiMode" class="text-sm text-gray-600">ASCII mode (for special characters)</label>
+                                    <span class="ml-1 text-gray-500 cursor-pointer group relative" id="asciiModeHelp">
+                                        <i class="fas fa-question-circle"></i>
+                                        <span class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block bg-gray-800 text-white text-xs rounded p-2 w-64">
+                                            Use this if your password has special characters and doesn't work on the server. This converts special characters to their basic ASCII form.
+                                        </span>
+                                    </span>
+                                </div>
                             </div>
                             <div id="passwordError" class="text-red-500 text-sm mb-4 hidden"></div>
                             <div class="flex justify-center space-x-3">
@@ -1042,13 +1055,33 @@
             const modal = document.getElementById('passwordModal');
             const fileId = modal.dataset.fileId;
             const passwordInput = document.getElementById('pdfPassword');
-            const password = passwordInput.value;
+            let password = passwordInput.value;
             const errorElement = document.getElementById('passwordError');
+            const useAsciiMode = document.getElementById('useAsciiMode').checked;
             
             if (!password) {
                 errorElement.textContent = 'Please enter a password';
                 errorElement.classList.remove('hidden');
                 return;
+            }
+            
+            // Process password for ASCII mode if selected
+            if (useAsciiMode) {
+                // Convert to basic ASCII by handling common special characters
+                console.log("Using ASCII mode for password");
+                let asciiPassword = '';
+                for (let i = 0; i < password.length; i++) {
+                    // Only keep basic ASCII characters (32-126)
+                    const charCode = password.charCodeAt(i);
+                    if (charCode >= 32 && charCode <= 126) {
+                        asciiPassword += password[i];
+                    } else {
+                        // Replace with closest ASCII equivalent or '?'
+                        asciiPassword += '?';
+                    }
+                }
+                password = asciiPassword;
+                console.log("Processed password (first char only): " + (password.length > 0 ? password[0] : ''));
             }
             
             // Show loading state
@@ -1065,7 +1098,8 @@
                     },
                     body: JSON.stringify({
                         file_id: fileId,
-                        password: password
+                        password: password,
+                        ascii_mode: useAsciiMode
                     })
                 });
                 
