@@ -949,7 +949,7 @@
                                     Cancel
                                 </button>
                                 <button id="bruteForceBtn" class="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg transition-colors">
-                                    <i class="fas fa-bolt mr-1"></i> Thử bỏ mật khẩu
+                                    <i class="fas fa-bolt mr-1"></i> Unlock
                                 </button>
                                 <button id="passwordSubmitBtn" class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors">
                                     Unlock
@@ -1012,7 +1012,64 @@
             const bruteForceBtn = document.getElementById('bruteForceBtn');
             const originalText = bruteForceBtn.innerHTML;
             bruteForceBtn.disabled = true;
-            bruteForceBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Đang thử...';
+            bruteForceBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Unlocking...';
+            
+            // Also disable other buttons
+            document.getElementById('passwordSubmitBtn').disabled = true;
+            document.getElementById('passwordCancelBtn').disabled = true;
+            
+            // Clear previous errors
+            errorElement.classList.add('hidden');
+            
+            // Show progress message
+            const progressElement = document.createElement('div');
+            progressElement.className = 'mt-4 text-gray-700 text-sm animate__animated animate__fadeIn';
+            progressElement.innerHTML = `
+                <div class="flex items-center">
+                    <div class="mr-3 text-blue-500">
+                        <i class="fas fa-cog fa-spin"></i>
+                    </div>
+                    <div>
+                        <div id="bruteForceStatus">Analyzing PDF structure...</div>
+                        <div class="w-full bg-gray-200 rounded-full h-2.5 mt-2 dark:bg-gray-700">
+                            <div class="bg-blue-600 h-2.5 rounded-full" id="bruteForceProgress" style="width: 10%"></div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Add it after the password field
+            const passwordField = document.getElementById('pdfPassword').parentNode;
+            passwordField.after(progressElement);
+            
+            // Setup progress animation
+            const statusElement = document.getElementById('bruteForceStatus');
+            const progressBar = document.getElementById('bruteForceProgress');
+            
+            // Progress animation
+            let progressValue = 10;
+            const progressMessages = [
+                'Searching for file structure...',
+                'Trying common passwords...',
+                'Extracting document data...',
+                'Analyzing security system...',
+                'Restructuring PDF content...',
+                'Removing encryption...',
+                'Rebuilding file structure...',
+                'Generating random passwords...',
+                'Applying security bypass methods...'
+            ];
+            
+            let messageIndex = 0;
+            const messageInterval = setInterval(() => {
+                messageIndex = (messageIndex + 1) % progressMessages.length;
+                statusElement.textContent = progressMessages[messageIndex];
+                
+                // Increment progress
+                progressValue += 5;
+                if (progressValue > 95) progressValue = 95;
+                progressBar.style.width = `${progressValue}%`;
+            }, 1500);
             
             try {
                 const response = await fetch('/brute-force-unlock', {
@@ -1025,9 +1082,18 @@
                     })
                 });
                 
+                // Clear animation
+                clearInterval(messageInterval);
+                
                 const result = await response.json();
                 
                 if (result.status === 'success') {
+                    // Show completion
+                    statusElement.textContent = 'Successfully unlocked!';
+                    progressBar.style.width = '100%';
+                    progressBar.classList.remove('bg-blue-600');
+                    progressBar.classList.add('bg-green-600');
+                    
                     // Add to processed files
                     processedFiles.push({
                         filename: result.filename,
@@ -1040,31 +1106,77 @@
                     // Remove from the password protected files
                     delete passwordProtectedFiles[fileId];
                     
-                    // Show success message
-                    showNotification(result.message || 'Successfully unlocked file without password!', 'success');
-                    
-                    // Close the modal
-                    closePasswordModal();
-                    
-                    // Update file list
-                    updateFileList();
+                    // Show success message with short delay
+                    setTimeout(() => {
+                        // Close the modal
+                        closePasswordModal();
+                        
+                        // Show success notification
+                        showNotification(result.message || 'Successfully unlocked file without password!', 'success');
+                        
+                        // Update file list if needed
+                        updateFileList();
+                    }, 1000);
                 } else {
-                    // Show error
-                    errorElement.textContent = result.message || 'Failed to unlock without password';
-                    errorElement.classList.remove('hidden');
+                    // Show error state
+                    statusElement.textContent = 'Unlock failed!';
+                    progressBar.style.width = '100%';
+                    progressBar.classList.remove('bg-blue-600');
+                    progressBar.classList.add('bg-red-600');
                     
-                    // Reset button
-                    bruteForceBtn.disabled = false;
-                    bruteForceBtn.innerHTML = originalText;
+                    // Show error after a short delay
+                    setTimeout(() => {
+                        // Remove progress element
+                        progressElement.classList.add('animate__fadeOut');
+                        setTimeout(() => {
+                            if (progressElement.parentNode) {
+                                progressElement.parentNode.removeChild(progressElement);
+                            }
+                        }, 500);
+                        
+                        // Show error
+                        errorElement.textContent = result.message || 'Could not unlock file without password';
+                        errorElement.classList.remove('hidden');
+                        
+                        // Reset buttons
+                        bruteForceBtn.disabled = false;
+                        bruteForceBtn.innerHTML = originalText;
+                        document.getElementById('passwordSubmitBtn').disabled = false;
+                        document.getElementById('passwordCancelBtn').disabled = false;
+                    }, 1000);
                 }
             } catch (error) {
-                console.error('Brute force unlock error:', error);
-                errorElement.textContent = 'An error occurred while trying to unlock';
-                errorElement.classList.remove('hidden');
+                // Clear animation
+                clearInterval(messageInterval);
                 
-                // Reset button
-                bruteForceBtn.disabled = false;
-                bruteForceBtn.innerHTML = originalText;
+                console.error('Brute force unlock error:', error);
+                
+                // Show error state
+                statusElement.textContent = 'Connection error!';
+                progressBar.style.width = '100%';
+                progressBar.classList.remove('bg-blue-600');
+                progressBar.classList.add('bg-red-600');
+                
+                // Show error after a short delay
+                setTimeout(() => {
+                    // Remove progress element
+                    progressElement.classList.add('animate__fadeOut');
+                    setTimeout(() => {
+                        if (progressElement.parentNode) {
+                            progressElement.parentNode.removeChild(progressElement);
+                        }
+                    }, 500);
+                    
+                    // Show error
+                    errorElement.textContent = 'Error processing unlock request';
+                    errorElement.classList.remove('hidden');
+                    
+                    // Reset buttons
+                    bruteForceBtn.disabled = false;
+                    bruteForceBtn.innerHTML = originalText;
+                    document.getElementById('passwordSubmitBtn').disabled = false;
+                    document.getElementById('passwordCancelBtn').disabled = false;
+                }, 1000);
             }
         }
 

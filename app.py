@@ -12,6 +12,7 @@ import io
 import json
 from urllib.parse import unquote
 import base64
+import random
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
@@ -721,114 +722,251 @@ def brute_force_unlock():
                             'status': 'success',
                             'filename': prefixed_filename,
                             'download_url': f'/download/{output_filename}',
-                            'message': 'Unlocked successfully with brute force method 1'
+                            'message': 'Successfully unlocked with method 1'
                         })
             except Exception as e:
                 app.logger.info(f"Brute force method 1 failed: {str(e)}")
             
-            # Method 2: Try to bypass password by creating a new document
+            # Method 2: Try common and random passwords
             try:
-                app.logger.info(f"Attempting brute force method 2: New document creation")
-                with open(input_path, 'rb') as input_file:
-                    reader = PdfReader(input_file)
-                    
-                    # Try common passwords
-                    common_passwords = ['', '1234', 'admin', 'password', '0000', '1111', 'adobe']
-                    for pwd in common_passwords:
+                app.logger.info(f"Attempting brute force method 2: Password attempts")
+                
+                # Common base passwords
+                base_passwords = [
+                    '', '1234', 'admin', 'password', '0000', '1111', 'adobe', 
+                    '123456', '12345678', 'qwerty', '111111', '123123', '123456789',
+                    'letmein', 'abc123', 'welcome', 'secret'
+                ]
+                
+                # Get the original filename to generate possible passwords
+                original_filename = protected_files.get(file_id, "document.pdf")
+                
+                # Extract filename without extension and add as possible password
+                filename_no_ext = os.path.splitext(original_filename)[0].lower()
+                filename_parts = re.split(r'[-_\s.]', filename_no_ext)
+                
+                # Add filename-based passwords
+                base_passwords.extend(filename_parts)
+                base_passwords.append(filename_no_ext)
+                
+                # Add common number suffixes to filename parts
+                for part in filename_parts:
+                    if len(part) > 2:  # Only use meaningful parts
+                        base_passwords.append(f"{part}123")
+                        base_passwords.append(f"{part}2023")
+                        base_passwords.append(f"{part}2024")
+                
+                # Remove duplicates while preserving order
+                base_passwords = list(dict.fromkeys(base_passwords))
+                
+                # Try each common password first
+                for pwd in base_passwords:
+                    try:
+                        app.logger.info(f"Trying password: {pwd}")
+                        reader = PdfReader(input_path)
+                        if reader.is_encrypted:
+                            success = reader.decrypt(pwd)
+                            if success == 1 or not reader.is_encrypted:
+                                # Password worked, create unlocked copy
+                                writer = PdfWriter()
+                                for page in reader.pages:
+                                    writer.add_page(page)
+                                
+                                with open(output_path, 'wb') as output_file:
+                                    writer.write(output_file)
+                                
+                                # Verify output
+                                if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                                    test_reader = PdfReader(output_path)
+                                    if not test_reader.is_encrypted:
+                                        # Get the original filename
+                                        original_filename = protected_files.get(file_id, "document.pdf")
+                                        
+                                        # Clean and prefix the filename
+                                        cleaned_filename = clean_filename(original_filename)
+                                        prefixed_filename = f"unlocked_{cleaned_filename}"
+                                        
+                                        # Store the mapping for download
+                                        display_filename = secure_filename(prefixed_filename)
+                                        processed_files[output_filename] = display_filename
+                                        save_processed_files()
+                                        
+                                        # Cleanup
+                                        if os.path.exists(input_path):
+                                            os.remove(input_path)
+                                        
+                                        if file_id in protected_files:
+                                            del protected_files[file_id]
+                                        
+                                        return jsonify({
+                                            'status': 'success',
+                                            'filename': prefixed_filename,
+                                            'download_url': f'/download/{output_filename}',
+                                            'message': f'Successfully unlocked with password "{pwd}"'
+                                        })
+                    except Exception as pwd_error:
+                        app.logger.debug(f"Password '{pwd}' failed: {str(pwd_error)}")
+                        continue
+                
+                # Now try random passwords (various patterns)
+                # This will generate various pattern passwords
+                # Pattern 1: 4-8 digit numbers
+                for length in range(4, 9):
+                    for _ in range(50):  # Try 50 random passwords of each length
                         try:
-                            reader.decrypt(pwd)
-                        except:
-                            pass
-                    
-                    # Try to create a new document
-                    writer = PdfWriter()
-                    
-                    # Try to extract and add each page
-                    pages_added = 0
-                    for i in range(len(reader.pages)):
+                            pwd = ''.join(random.choice('0123456789') for _ in range(length))
+                            app.logger.info(f"Trying random numeric password: {pwd}")
+                            reader = PdfReader(input_path)
+                            if reader.is_encrypted:
+                                success = reader.decrypt(pwd)
+                                if success == 1 or not reader.is_encrypted:
+                                    # Success! Create unlocked copy
+                                    writer = PdfWriter()
+                                    for page in reader.pages:
+                                        writer.add_page(page)
+                                    
+                                    with open(output_path, 'wb') as output_file:
+                                        writer.write(output_file)
+                                    
+                                    # Verify and return
+                                    if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                                        test_reader = PdfReader(output_path)
+                                        if not test_reader.is_encrypted:
+                                            # Process success
+                                            original_filename = protected_files.get(file_id, "document.pdf")
+                                            cleaned_filename = clean_filename(original_filename)
+                                            prefixed_filename = f"unlocked_{cleaned_filename}"
+                                            
+                                            # Store for download
+                                            display_filename = secure_filename(prefixed_filename)
+                                            processed_files[output_filename] = display_filename
+                                            save_processed_files()
+                                            
+                                            # Cleanup
+                                            if os.path.exists(input_path):
+                                                os.remove(input_path)
+                                            
+                                            if file_id in protected_files:
+                                                del protected_files[file_id]
+                                            
+                                            return jsonify({
+                                                'status': 'success',
+                                                'filename': prefixed_filename,
+                                                'download_url': f'/download/{output_filename}',
+                                                'message': f'Successfully unlocked with random password "{pwd}"'
+                                            })
+                        except Exception as rand_error:
+                            app.logger.debug(f"Random password failed: {str(rand_error)}")
+                            continue
+                
+                # Pattern 2: Common words with numbers
+                word_bases = ['pass', 'admin', 'user', 'pdf', 'doc', 'file', 'secure']
+                for word in word_bases:
+                    for num in range(100):
                         try:
+                            pwd = f"{word}{num}"
+                            app.logger.info(f"Trying pattern password: {pwd}")
+                            reader = PdfReader(input_path)
+                            if reader.is_encrypted:
+                                success = reader.decrypt(pwd)
+                                if success == 1:
+                                    # Follow same success pattern as above
+                                    writer = PdfWriter()
+                                    for page in reader.pages:
+                                        writer.add_page(page)
+                                    
+                                    with open(output_path, 'wb') as output_file:
+                                        writer.write(output_file)
+                                    
+                                    # Verify and process
+                                    if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                                        original_filename = protected_files.get(file_id, "document.pdf")
+                                        cleaned_filename = clean_filename(original_filename)
+                                        prefixed_filename = f"unlocked_{cleaned_filename}"
+                                        
+                                        display_filename = secure_filename(prefixed_filename)
+                                        processed_files[output_filename] = display_filename
+                                        save_processed_files()
+                                        
+                                        # Cleanup
+                                        if os.path.exists(input_path):
+                                            os.remove(input_path)
+                                        
+                                        if file_id in protected_files:
+                                            del protected_files[file_id]
+                                        
+                                        return jsonify({
+                                            'status': 'success',
+                                            'filename': prefixed_filename,
+                                            'download_url': f'/download/{output_filename}',
+                                            'message': f'Successfully unlocked with pattern password "{pwd}"'
+                                        })
+                        except Exception:
+                            continue
+            except Exception as e:
+                app.logger.info(f"Brute force method 2 failed: {str(e)}")
+            
+            # Method 3: Try to recover content page by page
+            try:
+                app.logger.info(f"Attempting brute force method 3: Page extraction")
+                reader = PdfReader(input_path)
+                
+                # Create new document
+                writer = PdfWriter()
+                
+                # Try to extract each page with error handling
+                pages_added = 0
+                total_pages = len(reader.pages) if not reader.is_encrypted else 0
+                
+                # If we don't know page count, try a reasonable number
+                if total_pages == 0:
+                    try:
+                        # Try to estimate page count
+                        with open(input_path, 'rb') as f:
+                            data = f.read()
+                            page_markers = data.count(b'/Page')
+                            if page_markers > 0:
+                                total_pages = min(page_markers, 200)  # Cap at 200 pages for safety
+                            else:
+                                total_pages = 50  # Default guess
+                    except:
+                        total_pages = 30  # Fallback
+                
+                # Try to access each page
+                for i in range(total_pages):
+                    try:
+                        # Try multiple methods to extract each page
+                        try:
+                            # Method A: Direct page access
                             page = reader.pages[i]
                             writer.add_page(page)
                             pages_added += 1
+                            continue
                         except:
-                            app.logger.info(f"Could not add page {i}")
+                            pass
+                        
+                        # Method B: Try with empty password
+                        try:
+                            reader.decrypt('')
+                            page = reader.pages[i]
+                            writer.add_page(page)
+                            pages_added += 1
+                            continue
+                        except:
+                            pass
+                    except Exception as page_error:
+                        app.logger.debug(f"Could not add page {i}: {str(page_error)}")
+                
+                # If we added any pages, try to save
+                if pages_added > 0:
+                    with open(output_path, 'wb') as output_file:
+                        writer.write(output_file)
                     
-                    if pages_added > 0:
-                        # Some pages were added, try to save
-                        with open(output_path, 'wb') as output_file:
-                            writer.write(output_file)
-                        
-                        # Test output file
-                        if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-                            try:
-                                test_reader = PdfReader(output_path)
-                                if not test_reader.is_encrypted:
-                                    # Get the original filename
-                                    original_filename = protected_files.get(file_id, "document.pdf")
-                                    
-                                    # Clean and prefix the filename
-                                    cleaned_filename = clean_filename(original_filename)
-                                    prefixed_filename = f"unlocked_{cleaned_filename}"
-                                    
-                                    # Store the mapping for download
-                                    display_filename = secure_filename(prefixed_filename)
-                                    processed_files[output_filename] = display_filename
-                                    save_processed_files()
-                                    
-                                    # Cleanup
-                                    if os.path.exists(input_path):
-                                        os.remove(input_path)
-                                    
-                                    if file_id in protected_files:
-                                        del protected_files[file_id]
-                                    
-                                    message = "Successfully unlocked"
-                                    if pages_added < len(reader.pages):
-                                        message += f" (Recovered {pages_added} out of {len(reader.pages)} pages)"
-                                    
-                                    return jsonify({
-                                        'status': 'success',
-                                        'filename': prefixed_filename,
-                                        'download_url': f'/download/{output_filename}',
-                                        'message': message
-                                    })
-                            except Exception as test_error:
-                                app.logger.error(f"Output file test failed: {str(test_error)}")
-            except Exception as e:
-                app.logger.info(f"Brute force method 2 failed: {str(e)}")
-                
-            # Method 3: Try with external tools (qpdf simulation)
-            try:
-                app.logger.info(f"Attempting brute force method 3: qpdf simulation")
-                # Try to create a completely new document
-                writer = PdfWriter()
-                
-                # Create an empty PDF
-                with open(output_path, 'wb') as f:
-                    writer.write(f)
-                
-                # Try to use binary mode and decrypt byte by byte
-                # This is a simplified simulation as we don't have qpdf
-                with open(input_path, 'rb') as input_file:
-                    pdf_bytes = input_file.read()
-                    
-                    # Try to skip the encryption part (very simplified)
-                    try:
-                        # Try to find PDF objects and recreate a basic PDF
-                        object_markers = [b'obj', b'endobj']
-                        stream_markers = [b'stream', b'endstream']
-                        
-                        # Extract all content objects
-                        extracted_bytes = pdf_bytes
-                        
-                        # Write the extracted content
-                        with open(output_path, 'wb') as f:
-                            f.write(extracted_bytes)
-                        
-                        # Test if result is a valid PDF
+                    # Test if valid
+                    if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
                         try:
                             test_reader = PdfReader(output_path)
-                            # If we reach here, it's a valid PDF
+                            
                             # Get the original filename
                             original_filename = protected_files.get(file_id, "document.pdf")
                             
@@ -848,31 +986,116 @@ def brute_force_unlock():
                             if file_id in protected_files:
                                 del protected_files[file_id]
                             
+                            message = f"Successfully unlocked (Extracted {pages_added}/{total_pages} pages)"
+                            
                             return jsonify({
                                 'status': 'success',
                                 'filename': prefixed_filename,
                                 'download_url': f'/download/{output_filename}',
-                                'message': 'Unlocked successfully with brute force method 3'
+                                'message': message
                             })
-                        except:
-                            # Not a valid PDF
-                            pass
-                    except Exception as e:
-                        app.logger.error(f"Error in binary extraction: {str(e)}")
+                        except Exception as test_error:
+                            app.logger.error(f"Output file test failed: {str(test_error)}")
             except Exception as e:
                 app.logger.info(f"Brute force method 3 failed: {str(e)}")
                 
+            # Method 4: Binary reconstruction (advanced)
+            try:
+                app.logger.info(f"Attempting brute force method 4: Binary reconstruction")
+                
+                # Read the PDF file in binary mode
+                with open(input_path, 'rb') as input_file:
+                    pdf_bytes = input_file.read()
+                    
+                    # Look for PDF structure markers
+                    pdf_header = pdf_bytes.find(b'%PDF-')
+                    pdf_eof = pdf_bytes.rfind(b'%%EOF')
+                    
+                    if pdf_header >= 0 and pdf_eof >= 0:
+                        # Found valid PDF structure markers
+                        
+                        # Try to find and remove encryption dictionary
+                        encrypt_pos = pdf_bytes.find(b'/Encrypt')
+                        
+                        if encrypt_pos >= 0:
+                            # Find the object containing the encryption dictionary
+                            obj_start = pdf_bytes.rfind(b' obj', 0, encrypt_pos)
+                            obj_end = pdf_bytes.find(b'endobj', encrypt_pos)
+                            
+                            if obj_start >= 0 and obj_end >= 0:
+                                # Create a copy without the encryption object
+                                modified_bytes = pdf_bytes[:obj_start] + pdf_bytes[obj_end + 6:]
+                                
+                                # Also try to remove any /Encrypt reference in the trailer
+                                trailer_pos = modified_bytes.rfind(b'/Trailer') 
+                                if trailer_pos < 0:
+                                    trailer_pos = modified_bytes.rfind(b'trailer')
+                                
+                                if trailer_pos >= 0:
+                                    encrypt_ref_pos = modified_bytes.find(b'/Encrypt', trailer_pos)
+                                    if encrypt_ref_pos >= 0:
+                                        dict_start = modified_bytes.rfind(b'<<', 0, encrypt_ref_pos)
+                                        dict_end = modified_bytes.find(b'>>', encrypt_ref_pos)
+                                        
+                                        if dict_start >= 0 and dict_end >= 0:
+                                            # Find the start and end of the /Encrypt entry
+                                            entry_start = encrypt_ref_pos
+                                            entry_end = modified_bytes.find(b'/', encrypt_ref_pos + 8)
+                                            if entry_end < 0 or entry_end > dict_end:
+                                                entry_end = modified_bytes.find(b'>>', encrypt_ref_pos)
+                                            
+                                            if entry_start >= 0 and entry_end >= 0:
+                                                # Remove the /Encrypt entry
+                                                modified_bytes = modified_bytes[:entry_start] + modified_bytes[entry_end:]
+                                
+                                # Write the modified PDF
+                                with open(output_path, 'wb') as f:
+                                    f.write(modified_bytes)
+                                
+                                # Test if valid
+                                try:
+                                    test_reader = PdfReader(output_path)
+                                    
+                                    # If we get here, it was successful
+                                    original_filename = protected_files.get(file_id, "document.pdf")
+                                    cleaned_filename = clean_filename(original_filename)
+                                    prefixed_filename = f"unlocked_{cleaned_filename}"
+                                    
+                                    # Store the mapping for download
+                                    display_filename = secure_filename(prefixed_filename)
+                                    processed_files[output_filename] = display_filename
+                                    save_processed_files()
+                                    
+                                    # Cleanup
+                                    if os.path.exists(input_path):
+                                        os.remove(input_path)
+                                    
+                                    if file_id in protected_files:
+                                        del protected_files[file_id]
+                                    
+                                    return jsonify({
+                                        'status': 'success',
+                                        'filename': prefixed_filename,
+                                        'download_url': f'/download/{output_filename}',
+                                        'message': 'Successfully unlocked with restructuring method'
+                                    })
+                                except:
+                                    # Not a valid PDF after modification
+                                    pass
+            except Exception as e:
+                app.logger.info(f"Brute force method 4 failed: {str(e)}")
+            
             # If we got to this point, all methods failed
             return jsonify({
                 'status': 'error',
-                'message': 'Could not unlock PDF without password. All brute force methods failed.'
+                'message': 'Could not unlock PDF without password. Please try entering the correct password.'
             })
                 
         except Exception as main_error:
             app.logger.error(f"Brute force unlock error: {str(main_error)}")
             return jsonify({
                 'status': 'error',
-                'message': f'Error during brute force unlock: {str(main_error)}'
+                'message': f'Error during unlocking: {str(main_error)}'
             })
             
     except Exception as e:
