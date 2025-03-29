@@ -452,19 +452,22 @@
     <!-- Password Modal -->
     <div id="passwordModal" class="modal">
         <div class="modal-content">
-            <span class="close">&times;</span>
-            <h4>Password Required</h4>
+            <span class="close" id="closePasswordModal">&times;</span>
+            <h4 id="passwordModalTitle">Password Required</h4>
             <p>This PDF is password-protected. Please enter the password to unlock it.</p>
             <div class="form-group">
-                <input type="password" id="pdfPassword" class="form-control" placeholder="Enter password">
+                <input type="password" id="passwordInput" class="form-control" placeholder="Enter password">
             </div>
-            <button id="unlockBtn" class="btn btn-primary">Unlock PDF</button>
+            <div class="flex space-x-2">
+                <button id="submitPasswordBtn" class="btn btn-primary">Unlock PDF</button>
+                <button id="tryPasswordBtn" class="btn debug-btn">Try Common Passwords</button>
+                <button id="cancelPasswordBtn" class="btn">Cancel</button>
+            </div>
             
-            <!-- Debug section (only visible in development) -->
-            <div id="debugPanel" class="debug-panel">
+            <!-- Debug section (only visible after failed attempts) -->
+            <div id="debugContainer" class="debug-panel">
                 <h5>Debug Information</h5>
                 <pre id="debugOutput">No debug information available.</pre>
-                <button id="tryCommonBtn" class="btn debug-btn">Try Common Passwords</button>
             </div>
         </div>
     </div>
@@ -482,13 +485,45 @@
         
         // Object to track files that need passwords
         const passwordProtectedFiles = {};
+        
+        // Common passwords for the Try Common Passwords feature
+        const commonPasswords = [
+            "", // Empty password
+            "password",
+            "123456",
+            "12345678",
+            "1234",
+            "qwerty",
+            "admin",
+            "welcome",
+            "abc123",
+            "test",
+            "123",
+            "1",
+            "0",
+            "default",
+            "user",
+            "pass",
+            "adobe",
+            "pdf"
+        ];
+        
+        let tryPasswordAttempts = 0;
+        let modalActive = false;
 
         // Track download history
         const downloadHistory = document.getElementById('downloadHistory');
         const downloadLinks = document.getElementById('downloadLinks');
         const downloadAllBtn = document.getElementById('downloadAllBtn');
         const emergencyResetBtn = document.getElementById('emergencyResetBtn');
-        const processedFiles = [];
+        let processedFiles = [];
+
+        // Variables for tracking upload and download state
+        let uploadedFiles = [];
+        let downloadedFiles = [];
+        let processedCount = 0;
+        let isPreviewing = false;
+        let progressInterval;
 
         // Function to clean filename by removing "(SECURED)" text and similar variations
         function cleanFilename(filename) {
@@ -594,7 +629,7 @@
             unlockBtn.disabled = files.length === 0;
         }
 
-        // Improved notification system to prevent overlapping
+        // Improved notification system to prevent overlapping and show immediately
         const notificationContainer = document.createElement('div');
         notificationContainer.className = 'fixed bottom-4 right-4 z-50 flex flex-col-reverse gap-2';
         document.body.appendChild(notificationContainer);
@@ -603,24 +638,7 @@
         let isShowingNotification = false;
 
         function showNotification(message, type = 'info') {
-            // Add to queue
-            notificationQueue.push({ message, type });
-            
-            // If not currently showing a notification, show the next one
-            if (!isShowingNotification) {
-                showNextNotification();
-            }
-        }
-
-        function showNextNotification() {
-            if (notificationQueue.length === 0) {
-                isShowingNotification = false;
-                return;
-            }
-            
-            isShowingNotification = true;
-            const { message, type } = notificationQueue.shift();
-            
+            // Create notification element immediately
             const notification = document.createElement('div');
             notification.className = `p-4 rounded-lg shadow-lg animate__animated animate__fadeInUp max-w-md mb-2 flex items-center`;
             
@@ -638,6 +656,7 @@
                 notification.innerHTML = `<i class="fas fa-info-circle mr-2"></i>${message}`;
             }
             
+            // Add to DOM immediately
             notificationContainer.appendChild(notification);
             
             // Fade out and remove after 3 seconds
@@ -648,8 +667,6 @@
                     if (notification.parentNode === notificationContainer) {
                         notificationContainer.removeChild(notification);
                     }
-                    // Show the next notification after a small delay
-                    setTimeout(showNextNotification, 300);
                 }, 500);
             }, 3000);
         }
@@ -1011,29 +1028,32 @@
             });
         });
 
-        // Load existing processed files when the page loads
-        document.addEventListener('DOMContentLoaded', async () => {
+        // Initialize UI properly when loading the page
+        document.addEventListener('DOMContentLoaded', async function() {
             try {
+                // Check for existing processed files
                 const response = await fetch('/get-processed-files');
                 
                 if (response.ok) {
                     const data = await response.json();
                     
                     if (data.files && data.files.length > 0) {
-                        // Add each file to the processedFiles array
-                        data.files.forEach(file => {
-                            processedFiles.push({
-                                filename: file.display_name,
-                                url: file.download_url
-                            });
-                        });
+                        // We have processed files, add them to the list
+                        processedFiles = data.files.map(file => ({
+                            filename: file.display_name,
+                            url: file.download_url
+                        }));
                         
-                        // Update the UI
+                        // Update the download history UI
                         updateDownloadHistory();
+                        console.log('Loaded existing processed files:', processedFiles.length);
+                    } else {
+                        console.log('No existing processed files found');
+                        downloadHistory.classList.add('hidden');
                     }
                 }
             } catch (error) {
-                console.error('Error loading processed files:', error);
+                console.error('Error checking for existing files:', error);
             }
         });
 
@@ -1130,68 +1150,253 @@
 
         // Function to show password modal
         function showPasswordModal(fileId, filename) {
-            // Show the modal
-            const passwordModal = document.getElementById('passwordModal');
-            if (!passwordModal) {
-                console.error('Password modal not found');
-                return;
-            }
-            
-            // Get the modal elements
-            const closeBtn = passwordModal.querySelector('.close');
-            const unlockBtn = passwordModal.querySelector('#unlockBtn');
-            const passwordInput = passwordModal.querySelector('#pdfPassword');
-            
-            if (!closeBtn || !unlockBtn || !passwordInput) {
-                console.error('Password modal elements not found');
-                return;
-            }
+            console.log("Showing password modal for file:", filename, "with ID:", fileId);
+            if (!fileId) return;
             
             // Set the file ID on the unlock button
-            unlockBtn.setAttribute('data-file-id', fileId);
+            const submitPasswordBtn = document.getElementById('submitPasswordBtn');
+            submitPasswordBtn.setAttribute('data-file-id', fileId);
+            console.log("Set file ID attribute on unlock button:", submitPasswordBtn.getAttribute('data-file-id'));
             
-            // Update the modal title to include the filename
-            const modalTitle = passwordModal.querySelector('h4');
-            if (modalTitle) {
-                modalTitle.textContent = `Password Required: ${filename}`;
+            // Set the filename in the modal title
+            const modalTitle = document.getElementById('passwordModalTitle');
+            modalTitle.textContent = `Enter password for ${filename}`;
+            
+            // Clear any previous password
+            document.getElementById('passwordInput').value = '';
+            
+            // Hide the debug container initially
+            const debugContainer = document.getElementById('debugContainer');
+            if (debugContainer) {
+                debugContainer.style.display = 'none';
             }
             
-            // Clear the password input
-            passwordInput.value = '';
+            // Make sure the Try Password button is visible and not disabled
+            const tryPasswordBtn = document.getElementById('tryPasswordBtn');
+            if (tryPasswordBtn) {
+                tryPasswordBtn.style.display = 'inline-block';
+                tryPasswordBtn.disabled = false;
+                tryPasswordBtn.textContent = 'Try Common Passwords';
+            }
+            
+            // Reset attempts counter
+            tryPasswordAttempts = 0;
             
             // Show the modal
+            const passwordModal = document.getElementById('passwordModal');
             passwordModal.style.display = 'block';
+            modalActive = true;
             
-            // Set focus on the password input
-            passwordInput.focus();
-            
-            // Add event listeners
-            closeBtn.onclick = function() {
-                passwordModal.style.display = 'none';
-            };
-            
-            unlockBtn.onclick = function() {
+            // Focus the password input
+            setTimeout(() => {
+                document.getElementById('passwordInput').focus();
+            }, 100);
+        }
+
+        // Set up event listeners for password modal
+        document.addEventListener('DOMContentLoaded', function() {
+            // Button to submit password
+            const submitPasswordBtn = document.getElementById('submitPasswordBtn');
+            submitPasswordBtn.addEventListener('click', function() {
+                const fileId = this.getAttribute('data-file-id');
                 unlockWithPassword(fileId);
-            };
+            });
             
-            // Allow Enter key to submit
-            passwordInput.onkeypress = function(e) {
-                if (e.key === 'Enter') {
+            // Button to try common passwords
+            const tryPasswordBtn = document.getElementById('tryPasswordBtn');
+            tryPasswordBtn.addEventListener('click', function() {
+                const fileId = document.getElementById('submitPasswordBtn').getAttribute('data-file-id');
+                tryCommonPasswords(fileId);
+            });
+            
+            // Close modal button
+            const closePasswordModal = document.getElementById('closePasswordModal');
+            closePasswordModal.addEventListener('click', function() {
+                document.getElementById('passwordModal').style.display = 'none';
+                modalActive = false;
+            });
+            
+            // Cancel button
+            const cancelPasswordBtn = document.getElementById('cancelPasswordBtn');
+            cancelPasswordBtn.addEventListener('click', function() {
+                document.getElementById('passwordModal').style.display = 'none';
+                modalActive = false;
+            });
+            
+            // Close modal on click outside
+            window.addEventListener('click', function(event) {
+                const passwordModal = document.getElementById('passwordModal');
+                if (event.target === passwordModal) {
+                    passwordModal.style.display = 'none';
+                    modalActive = false;
+                }
+            });
+            
+            // Allow pressing Enter to submit password
+            const passwordInput = document.getElementById('passwordInput');
+            passwordInput.addEventListener('keypress', function(event) {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    const fileId = document.getElementById('submitPasswordBtn').getAttribute('data-file-id');
                     unlockWithPassword(fileId);
                 }
-            };
+            });
+        });
+
+        // Try common passwords
+        function tryCommonPasswords(fileId) {
+            console.log("Starting tryCommonPasswords with fileId:", fileId);
+            if (!fileId) {
+                showNotification('No file selected', 'error');
+                return;
+            }
             
-            // Close when clicking outside the modal
-            window.onclick = function(event) {
-                if (event.target == passwordModal) {
-                    passwordModal.style.display = 'none';
+            // Get the filename from the modal title
+            const modalTitle = document.getElementById('passwordModalTitle');
+            const filename = modalTitle.textContent.replace('Enter password for ', '');
+            
+            // Show a progress bar in the modal for password attempts
+            const debugContainer = document.getElementById('debugContainer');
+            debugContainer.style.display = 'block';
+            debugContainer.innerHTML = `
+                <h5>Trying Common Passwords</h5>
+                <div class="progress-container" style="margin: 10px 0;">
+                    <div class="progress-bar" id="passwordProgressBar" style="width: 0%"></div>
+                </div>
+                <p id="currentPasswordText" style="font-size: 12px; margin-top: 5px;"></p>
+            `;
+            
+            // Disable the try password button
+            const tryPasswordBtn = document.getElementById('tryPasswordBtn');
+            tryPasswordBtn.disabled = true;
+            tryPasswordBtn.textContent = 'Trying...';
+            
+            // Show initial notification
+            showNotification('Trying common passwords...', 'info');
+            
+            // Start with the first password to try
+            tryPasswordAttempts = 0;
+            tryPassword(fileId, tryPasswordAttempts);
+        }
+        
+        // Try a specific password from the common passwords list
+        function tryPassword(fileId, index) {
+            console.log(`Trying password at index ${index} for file ${fileId}`);
+            if (index >= commonPasswords.length) {
+                // We've tried all passwords, enable the button and show message
+                const tryPasswordBtn = document.getElementById('tryPasswordBtn');
+                tryPasswordBtn.disabled = false;
+                tryPasswordBtn.textContent = 'Try Common Passwords';
+                
+                // Reset the debug container
+                const debugContainer = document.getElementById('debugContainer');
+                debugContainer.innerHTML = `<h5>Debug Information</h5>
+                <pre id="debugOutput">All common passwords tried without success.</pre>`;
+                
+                showNotification('All common passwords tried without success', 'error');
+                return;
+            }
+            
+            const password = commonPasswords[index];
+            
+            // Update progress bar
+            const progressBar = document.getElementById('passwordProgressBar');
+            const percentComplete = Math.round((index / commonPasswords.length) * 100);
+            progressBar.style.width = `${percentComplete}%`;
+            
+            // Update current password text
+            const currentPasswordText = document.getElementById('currentPasswordText');
+            currentPasswordText.textContent = `Trying: "${password || '(empty)'}" (${index+1}/${commonPasswords.length})`;
+            
+            // Send the password to the server
+            fetch('/unlock-with-password', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    file_id: fileId,
+                    password: password,
+                    debug_info: true
+                }),
+            })
+            .then(response => response.json())
+            .then(result => {
+                console.log("Password attempt result:", result);
+                if (result.status === 'success') {
+                    // Password worked, update UI
+                    const tryPasswordBtn = document.getElementById('tryPasswordBtn');
+                    tryPasswordBtn.disabled = false;
+                    tryPasswordBtn.textContent = 'Try Common Passwords';
+                    
+                    // Add to processed files
+                    processedFiles.push({
+                        filename: result.filename,
+                        url: result.download_url
+                    });
+                    
+                    // Remove the file from the files array
+                    const fileIndex = files.findIndex(file => file.fileId === fileId);
+                    if (fileIndex !== -1) {
+                        files.splice(fileIndex, 1);
+                        updateFileList();
+                    }
+                    
+                    // Update the download list
+                    updateDownloadHistory();
+                    
+                    // Close the modal
+                    const passwordModal = document.getElementById('passwordModal');
+                    if (passwordModal) {
+                        passwordModal.style.display = 'none';
+                    }
+                    
+                    // Show success notification
+                    showNotification(`Successfully unlocked with password: ${password || '(empty)'}`, 'success');
+                    
+                    // Process the next password-protected file, if any
+                    processNextPasswordFile();
+                } else {
+                    // Password didn't work, try the next one
+                    tryPasswordAttempts = index + 1;
+                    // Speed up the process by reducing delay between attempts
+                    setTimeout(() => {
+                        tryPassword(fileId, index + 1);
+                    }, 50); // Reduced from 300ms to 50ms for faster attempts
                 }
-            };
+            })
+            .catch(error => {
+                console.error('Error trying password:', error);
+                
+                // Re-enable the button
+                const tryPasswordBtn = document.getElementById('tryPasswordBtn');
+                tryPasswordBtn.disabled = false;
+                tryPasswordBtn.textContent = 'Try Common Passwords';
+                
+                // Reset the debug container
+                const debugContainer = document.getElementById('debugContainer');
+                debugContainer.innerHTML = `<h5>Debug Information</h5>
+                <pre id="debugOutput">Error trying password: ${error.message}</pre>`;
+                
+                showNotification('Error trying password', 'error');
+            });
+        }
+
+        // Process the next password-protected file
+        function processNextPasswordFile() {
+            // Find the next password-protected file
+            const passwordFile = files.find(file => file.passwordProtected);
+            
+            if (passwordFile && passwordFile.fileId) {
+                // Show the password modal for this file
+                showPasswordModal(passwordFile.fileId, passwordFile.name);
+            }
         }
 
         // Function to unlock with password
         function unlockWithPassword(fileId) {
-            const passwordInput = document.getElementById('pdfPassword');
+            console.log("Attempting to unlock with password for fileId:", fileId);
+            const passwordInput = document.getElementById('passwordInput');
             if (!passwordInput) {
                 console.error('Password input element not found');
                 return;
@@ -1209,8 +1414,10 @@
             const data = {
                 file_id: fileId,
                 password: password,
-                debug_info: true // Add debug info flag
+                debug_info: true
             };
+            
+            console.log("Sending unlock request with data:", data);
             
             fetch('/unlock-with-password', {
                 method: 'POST',
@@ -1221,15 +1428,7 @@
             })
             .then(response => response.json())
             .then(data => {
-                // Add debug information if available
-                if (data.debug_info) {
-                    try {
-                        showDebugInfo(data.debug_info, password);
-                    } catch (e) {
-                        console.error('Error showing debug info:', e);
-                    }
-                }
-                
+                console.log("Unlock response:", data);
                 // Process the response
                 if (data.status === 'success') {
                     showNotification('PDF unlocked successfully!', 'success');
@@ -1245,7 +1444,10 @@
                     
                     // Close the password modal
                     const passwordModal = document.getElementById('passwordModal');
-                    if (passwordModal) passwordModal.style.display = 'none';
+                    if (passwordModal) {
+                        passwordModal.style.display = 'none';
+                        modalActive = false;
+                    }
                     
                     // Remove the file from the files array
                     const fileIndex = files.findIndex(file => file.fileId === fileId);
@@ -1254,11 +1456,25 @@
                         updateFileList();
                     }
                     
-                    // Show the download section
-                    downloadHistory.classList.remove('hidden');
+                    // Check for more password files to process
+                    processNextPasswordFile();
                 } else if (data.status === 'error') {
+                    // Hide any previous debug info
+                    const debugContainer = document.getElementById('debugContainer');
+                    if (debugContainer) {
+                        debugContainer.style.display = 'none';
+                    }
+                    
+                    // Show error notification
                     if (data.error && data.error.includes('incorrect password')) {
-                        showNotification('Incorrect password. Please try again.', 'error');
+                        showNotification('Incorrect password. Please try again or use "Try Common Passwords".', 'error');
+                        
+                        // Show the try password button after a failed attempt
+                        const tryPasswordBtn = document.getElementById('tryPasswordBtn');
+                        if (tryPasswordBtn) {
+                            tryPasswordBtn.style.display = 'inline-block';
+                            tryPasswordBtn.disabled = false;
+                        }
                     } else {
                         showNotification('Error: ' + (data.error || 'Unknown error'), 'error');
                     }
@@ -1270,29 +1486,110 @@
             });
         }
 
-        // Function to show debug information
-        function showDebugInfo(debugInfo, password) {
-            // Show the debug panel
-            const debugPanel = document.getElementById('debugPanel');
-            if (!debugPanel) return; // Avoid null reference error
+        // Improved tab close detection
+        window.addEventListener('beforeunload', function(event) {
+            // Store current timestamp
+            const closeTime = Date.now();
+            localStorage.setItem('tabClosingTime', closeTime.toString());
+            localStorage.setItem('tabClosed', 'true');
             
-            debugPanel.style.display = 'block';
+            // This code will run on refresh but not on tab close (no time to execute)
+            setTimeout(function() {
+                // If this runs, it's a page refresh, not a tab close
+                localStorage.setItem('isRefresh', 'true');
+            }, 1);
+        });
+        
+        // When the page loads, check if it was a tab close or refresh
+        document.addEventListener('DOMContentLoaded', function() {
+            const tabClosed = localStorage.getItem('tabClosed');
+            const isRefresh = localStorage.getItem('isRefresh');
             
-            // Format and display the debug info
-            const debugOutput = document.getElementById('debugOutput');
-            if (!debugOutput) return; // Avoid null reference error
+            // Check session status
+            checkSessionAndCleanIfNeeded(tabClosed, isRefresh);
             
-            let debugText = `Password attempted: "${password}"\n`;
-            debugText += `Password type: ${typeof password}\n`;
-            debugText += `Password length: ${password.length}\n\n`;
-            
-            if (typeof debugInfo === 'object') {
-                debugText += JSON.stringify(debugInfo, null, 2);
-            } else {
-                debugText += debugInfo;
+            // Always clear the localStorage flags
+            localStorage.removeItem('tabClosed');
+            localStorage.removeItem('isRefresh');
+            localStorage.removeItem('tabClosingTime');
+        });
+        
+        // Check session status and clean data if needed
+        async function checkSessionAndCleanIfNeeded(tabClosed, isRefresh) {
+            try {
+                // Check server-side session status first
+                const sessionResponse = await fetch('/session-status');
+                const sessionData = await sessionResponse.json();
+                
+                console.log('Session status:', sessionData);
+                
+                // If we have data and tab was closed (but not refreshed), clear everything
+                if (sessionData.has_data && tabClosed === 'true' && isRefresh !== 'true') {
+                    console.log('Tab was closed and reopened with existing data - clearing data');
+                    
+                    // Clear local files and UI
+                    files = [];
+                    processedFiles = [];
+                    updateFileList();
+                    
+                    if (downloadHistory) {
+                        downloadHistory.classList.add('hidden');
+                    }
+                    
+                    // Send request to clear server-side files
+                    const clearResponse = await fetch('/clear-processed', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({}),
+                    });
+                    
+                    const clearData = await clearResponse.json();
+                    console.log('Server data cleared:', clearData);
+                    
+                    // Show notification about data clearing
+                    setTimeout(() => {
+                        showNotification('Previous session data was cleared for privacy', 'info');
+                    }, 1000);
+                } else {
+                    // If it's a refresh or no existing data, just load any existing files
+                    loadExistingFiles();
+                }
+            } catch (error) {
+                console.error('Error checking session status:', error);
+                // Fall back to loading existing files if there was an error
+                loadExistingFiles();
             }
-            
-            debugOutput.textContent = debugText;
+        }
+        
+        // Load existing processed files
+        async function loadExistingFiles() {
+            try {
+                // Check for existing processed files
+                const response = await fetch('/get-processed-files');
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    if (data.files && data.files.length > 0) {
+                        // We have processed files, add them to the list
+                        processedFiles = data.files.map(file => ({
+                            filename: file.display_name,
+                            url: file.download_url
+                        }));
+                        
+                        // Update the download history UI
+                        updateDownloadHistory();
+                        console.log('Loaded existing processed files:', processedFiles.length);
+                    } else {
+                        console.log('No existing processed files found');
+                        downloadHistory.classList.add('hidden');
+                    }
+                }
+            } catch (error) {
+                console.error('Error checking for existing files:', error);
+            }
         }
     </script>
     <script src="{{ url_for('static', filename='js/payment_info.js') }}"></script>

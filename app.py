@@ -124,16 +124,72 @@ def allowed_file(filename):
     """Check if the uploaded file has an allowed extension."""
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-def clean_filename(filename):
+def clean_filename(filename, file_id=None):
+    """
+    Clean up the filename by removing security indicators and ensuring proper format.
+    
+    Args:
+        filename (str): The original filename
+        file_id (str, optional): The unique file ID to use in generated names
+        
+    Returns:
+        str: Cleaned filename without security indicators
+    """
+    app.logger.info(f"Cleaning filename: {filename}")
+    
+    # Ensure we're working with a string
+    if not filename or not isinstance(filename, str):
+        app.logger.info("Invalid filename, using default")
+        if file_id:
+            # Use file_id to create a unique filename
+            timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+            return f"document_{file_id[:8]}_{timestamp}.pdf"
+        else:
+            return "document.pdf"
+    
+    # Store original filename for logging
+    original = filename
+        
     # Remove common security indicators in filenames
     # This handles variations like (SECURED), [SECURED], [PROTECTED], etc.
     cleaned_name = re.sub(r'\s*[\(\[](?:SECURED|PROTECTED|LOCKED|READONLY)[\)\]]\s*', '', filename, flags=re.IGNORECASE)
     
     # For files like "unlocked_Thuc_hanh_Buoi_2..._Quy_trinh_va_ke_hoach_kiem_thu.pdf (SECURED)"
-    # Remove the "unlocked_" prefix if it exists
-    if cleaned_name.startswith("unlocked_"):
+    # Remove the "unlocked_" prefix if it exists - we'll add it back later consistently
+    if cleaned_name.lower().startswith("unlocked_"):
         cleaned_name = cleaned_name[9:]
         
+    # Replace consecutive spaces with a single space
+    cleaned_name = re.sub(r'\s+', ' ', cleaned_name)
+    
+    # Remove spaces at the beginning and end
+    cleaned_name = cleaned_name.strip()
+    
+    # Make sure the file has a .pdf extension
+    if not cleaned_name.lower().endswith('.pdf'):
+        cleaned_name = f"{cleaned_name}.pdf"
+    
+    # Ensure the name is not empty or just "document.pdf"
+    if not cleaned_name or cleaned_name == ".pdf" or cleaned_name.lower() == "document.pdf":
+        # Generate a timestamp-based filename instead of using "document.pdf"
+        timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+        
+        # Extract original filename without extension if possible
+        original_without_ext = os.path.splitext(original)[0]
+        
+        if original_without_ext and original_without_ext.lower() != "document":
+            # Use the original name but clean it
+            cleaned_name = f"{original_without_ext}_{timestamp}.pdf"
+            app.logger.info(f"Using original name with timestamp: {cleaned_name}")
+        else:
+            # No usable original name, use timestamp with file_id if available
+            if file_id:
+                cleaned_name = f"document_{file_id[:8]}_{timestamp}.pdf"
+            else:
+                cleaned_name = f"document_{timestamp}.pdf"
+            app.logger.info(f"Generated unique filename: {cleaned_name}")
+    
+    app.logger.info(f"Filename after cleaning: {cleaned_name}")
     return cleaned_name
 
 # Helper function to try password variations
@@ -229,13 +285,32 @@ def unlock_pdf(input_path, output_path, password, file_id=None):
                             
                             # Get original filename
                             original_filename = "document.pdf"
-                            if file_id:
+                            if file_id and file_id in protected_files:
                                 original_filename = protected_files.get(file_id, "document.pdf")
+                                app.logger.info(f"Retrieved original filename for file_id {file_id}: {original_filename}")
                                 
                             # Process filenames
-                            cleaned_filename = clean_filename(original_filename)
+                            cleaned_filename = clean_filename(original_filename, file_id)
+                            app.logger.info(f"After cleaning filename: {cleaned_filename}")
+                            
+                            # Make sure we're not getting an empty or default name
+                            if cleaned_filename in ["document.pdf", "", ".pdf"] or cleaned_filename.lower() == "document.pdf":
+                                if original_filename and original_filename.lower() != "document.pdf":
+                                    # Use the original name but without extension
+                                    base_name = os.path.splitext(original_filename)[0]
+                                    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+                                    cleaned_filename = f"{base_name}_{timestamp}.pdf"
+                                    app.logger.info(f"Using modified original filename: {cleaned_filename}")
+                                else:
+                                    # Generate a completely new name
+                                    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+                                    cleaned_filename = f"file_{timestamp}.pdf"
+                                    app.logger.info(f"Generated unique filename: {cleaned_filename}")
+                            
+                            # Create the display filename with the 'unlocked_' prefix
                             prefixed_filename = f"unlocked_{cleaned_filename}"
                             display_filename = secure_filename(prefixed_filename)
+                            app.logger.info(f"Final display filename: {display_filename}")
                             
                             # Store in processed files
                             output_filename = os.path.basename(output_path)
@@ -313,13 +388,37 @@ def unlock_pdf(input_path, output_path, password, file_id=None):
                 
             # Get original filename if file_id is provided
             original_filename = "document.pdf"
-            if file_id:
+            if file_id and file_id in protected_files:
                 original_filename = protected_files.get(file_id, "document.pdf")
-                
+                app.logger.info(f"Retrieved original filename for file_id {file_id}: {original_filename}")
+            else:
+                # If we don't have an original filename, try to create a unique one
+                timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+                original_filename = f"file_{timestamp}.pdf"
+                app.logger.info(f"No original filename found, generated: {original_filename}")
+            
             # Process filenames for display
-            cleaned_filename = clean_filename(original_filename)
+            cleaned_filename = clean_filename(original_filename, file_id)
+            app.logger.info(f"After cleaning filename: {cleaned_filename}")
+            
+            # Make sure we're not getting an empty or default name
+            if cleaned_filename in ["document.pdf", "", ".pdf"] or cleaned_filename.lower() == "document.pdf":
+                if original_filename and original_filename.lower() != "document.pdf":
+                    # Use the original name but without extension
+                    base_name = os.path.splitext(original_filename)[0]
+                    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+                    cleaned_filename = f"{base_name}_{timestamp}.pdf"
+                    app.logger.info(f"Using modified original filename: {cleaned_filename}")
+                else:
+                    # Generate a completely new name
+                    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+                    cleaned_filename = f"file_{timestamp}.pdf"
+                    app.logger.info(f"Generated unique filename: {cleaned_filename}")
+            
+            # Create the display filename with the 'unlocked_' prefix
             prefixed_filename = f"unlocked_{cleaned_filename}"
             display_filename = secure_filename(prefixed_filename)
+            app.logger.info(f"Final display filename: {display_filename}")
             
             # Store in processed files for later download
             output_filename = os.path.basename(output_path)
@@ -393,13 +492,21 @@ def unlock_pdf(input_path, output_path, password, file_id=None):
                         
                         # Get original filename if file_id is provided
                         original_filename = "document.pdf"
-                        if file_id:
+                        if file_id and file_id in protected_files:
                             original_filename = protected_files.get(file_id, "document.pdf")
+                            app.logger.info(f"Retrieved original filename for file_id {file_id}: {original_filename}")
+                        else:
+                            # If we don't have an original filename, try to create a unique one
+                            timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+                            original_filename = f"file_{timestamp}.pdf"
+                            app.logger.info(f"No original filename found, generated: {original_filename}")
                             
                         # Process filenames
-                        cleaned_filename = clean_filename(original_filename)
+                        cleaned_filename = clean_filename(original_filename, file_id)
                         prefixed_filename = f"unlocked_{cleaned_filename}"
                         display_filename = secure_filename(prefixed_filename)
+                        
+                        app.logger.info(f"Display filename after cleaning: {display_filename}")
                         
                         # Store in processed files
                         output_filename = os.path.basename(output_path)
@@ -462,7 +569,7 @@ def unlock():
         for file in files:
             if file and allowed_file(file.filename):
                 # Generate a secure filename to prevent directory traversal attacks
-                filename = secure_filename(file.filename)
+                original_filename = secure_filename(file.filename)
                 
                 # Generate a unique ID for this file
                 file_id = str(uuid.uuid4())
@@ -471,12 +578,13 @@ def unlock():
                 input_path = os.path.join(app.config['UPLOAD_FOLDER'], file_id)
                 file.save(input_path)
                 
+                # Store original filename for later processing
+                protected_files[file_id] = original_filename
+                app.logger.info(f"Stored original filename for file_id {file_id}: {original_filename}")
+                
                 # Create the output filename and path
                 output_filename = f"unlocked_{file_id}"
                 output_path = os.path.join(app.config['PROCESSED_FOLDER'], output_filename)
-                
-                # Track this file's original name by its ID
-                protected_files[file_id] = filename
                 
                 # Try to unlock the PDF
                 try:
@@ -491,7 +599,7 @@ def unlock():
                             
                             # If decrypt_result > 0, file can be opened without password
                             if decrypt_result <= 0:
-                                app.logger.info(f"PDF requires password: {filename}")
+                                app.logger.info(f"PDF requires password: {original_filename}")
                                 # Return info that password is needed
                                 results.append({
                                     'file_id': file_id,
@@ -503,7 +611,7 @@ def unlock():
                             
                     except Exception as e:
                         if "password" in str(e).lower():
-                            app.logger.info(f"PDF requires password: {filename}")
+                            app.logger.info(f"PDF requires password: {original_filename}")
                             # Return info that password is needed
                             results.append({
                                 'file_id': file_id,
@@ -534,7 +642,7 @@ def unlock():
                     unlock_result = unlock_pdf(input_path, output_path, password='', file_id=file_id)
                     
                     if unlock_result['status'] == 'success':
-                        app.logger.info(f"Successfully unlocked PDF: {filename}")
+                        app.logger.info(f"Successfully unlocked PDF: {original_filename}")
                         # Get the file info
                         display_filename = unlock_result['filename']
                         download_url = unlock_result['download_url']
@@ -545,7 +653,7 @@ def unlock():
                             'download_url': download_url
                         })
                     else:
-                        app.logger.warning(f"Failed to unlock PDF: {filename}")
+                        app.logger.warning(f"Failed to unlock PDF: {original_filename}")
                         # Failed to unlock, add to results
                         results.append({
                             'file_id': file_id,
@@ -592,6 +700,7 @@ def unlock():
                 
             # Get original filename
             original_filename = protected_files.get(file_id, "document.pdf")
+            app.logger.info(f"Processing existing file with ID {file_id}, original name: {original_filename}")
             
             # Create output path
             output_filename = f"unlocked_{file_id}"
@@ -685,11 +794,13 @@ def unlock_with_password():
     output_path = os.path.join(app.config['PROCESSED_FOLDER'], output_filename)
     
     # Get the original filename
-    original_filename = protected_files.get(file_id, "document.pdf")
+    original_filename = protected_files.get(file_id, f"document_{file_id[:8]}.pdf")
+    
+    app.logger.info(f"Original filename from protected_files for file_id {file_id}: {original_filename}")
     
     # Try to unlock the PDF
     try:
-        result = unlock_pdf(input_path, output_path, password)
+        result = unlock_pdf(input_path, output_path, password, file_id=file_id)
         
         if include_debug:
             debug_info['unlock_result'] = result
@@ -698,6 +809,8 @@ def unlock_with_password():
             # Get the display filename
             display_filename = result.get('filename')
             download_url = result.get('download_url')
+            
+            app.logger.info(f"Successfully unlocked with password, display filename: {display_filename}")
             
             return jsonify({
                 'status': 'success',
@@ -735,13 +848,54 @@ def download(filename):
         if not os.path.exists(file_path):
             return jsonify({'error': f'File not found: {file_path}'}), 404
         
-        # Get the display filename from our tracking dictionary or use the filename as is
-        display_filename = processed_files.get(filename, filename)
+        # Extract the file_id from the filename if possible
+        file_id = None
+        if filename.startswith("unlocked_"):
+            file_id = filename[9:]  # Extract the UUID part
         
+        app.logger.info(f"Download requested for: {filename}, extracted file_id: {file_id}")
+        
+        # Get the display filename from our tracking dictionary
+        display_filename = processed_files.get(filename, filename)
+        app.logger.info(f"Display filename from processed_files: {display_filename}")
+        
+        # Get just the base filename without the 'unlocked_' prefix if it exists
+        if display_filename.startswith("unlocked_"):
+            base_filename = display_filename[9:]
+        else:
+            base_filename = display_filename
+            
+        # Make sure we're not using a generic "document.pdf" filename
+        if base_filename in ["document.pdf", ".pdf", ""] or base_filename.startswith("document_"):
+            # Try to get the original filename from protected_files if file_id is available
+            if file_id and file_id in protected_files:
+                original_name = protected_files.get(file_id)
+                app.logger.info(f"Found original filename in protected_files: {original_name}")
+                
+                # Clean up original name
+                if original_name:
+                    base_filename = clean_filename(original_name, file_id)
+                    app.logger.info(f"Using original filename for download: {base_filename}")
+            
+            # If we still don't have a good name, generate a unique one
+            if base_filename in ["document.pdf", ".pdf", ""] or base_filename.startswith("document_"):
+                # Generate a more descriptive filename with timestamp and file_id
+                timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+                if file_id:
+                    base_filename = f"file_{file_id[:8]}_{timestamp}.pdf"
+                else:
+                    base_filename = f"file_{timestamp}.pdf"
+                app.logger.info(f"Generated new base filename: {base_filename}")
+        
+        # Create the final download filename with the 'unlocked_' prefix
+        final_filename = f"unlocked_{base_filename}"
+        app.logger.info(f"Final download filename: {final_filename}")
+        
+        # Create the response with the properly named file
         response = send_file(
             file_path,
             as_attachment=True,
-            download_name=display_filename
+            download_name=final_filename
         )
         
         return response
@@ -760,6 +914,9 @@ def download_all():
         file_urls = data['files']
         memory_file = io.BytesIO()
         
+        # Keep track of filenames used in the ZIP to prevent duplicates
+        used_filenames = set()
+        
         # Create a ZIP file in memory
         with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
             for file_url in file_urls:
@@ -768,15 +925,57 @@ def download_all():
                 file_path = os.path.join(app.config['PROCESSED_FOLDER'], filename)
                 
                 if os.path.exists(file_path):
+                    # Extract file_id if possible
+                    file_id = None
+                    if filename.startswith("unlocked_"):
+                        file_id = filename[9:]
+                    
                     # Get the display filename for the ZIP archive
                     display_filename = processed_files.get(filename, filename)
+                    app.logger.info(f"ZIP: Original display filename for {filename}: {display_filename}")
                     
-                    # Make sure the display filename has the "unlocked_" prefix
-                    if not display_filename.startswith("unlocked_"):
-                        display_filename = f"unlocked_{display_filename}"
+                    # Get just the base filename without the 'unlocked_' prefix if it exists
+                    if display_filename.startswith("unlocked_"):
+                        base_filename = display_filename[9:]
+                    else:
+                        base_filename = display_filename
                     
-                    # Add the file to the ZIP archive
-                    zf.write(file_path, arcname=display_filename)
+                    # Try to get original filename from protected_files
+                    if file_id and file_id in protected_files:
+                        original_name = protected_files.get(file_id)
+                        if original_name:
+                            base_filename = clean_filename(original_name, file_id)
+                            app.logger.info(f"ZIP: Using original filename: {base_filename}")
+                    
+                    # Make sure we're not using a generic "document.pdf" filename
+                    if base_filename in ["document.pdf", ".pdf", ""] or base_filename.startswith("document_"):
+                        # Generate a unique name based on file_id if available
+                        timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+                        if file_id:
+                            base_filename = f"file_{file_id[:8]}_{timestamp}.pdf"
+                        else:
+                            base_filename = f"file_{timestamp}_{len(used_filenames)}.pdf"
+                        app.logger.info(f"ZIP: Generated new base filename: {base_filename}")
+                    
+                    # Create the final archive filename with the 'unlocked_' prefix
+                    final_filename = f"unlocked_{base_filename}"
+                    
+                    # Check if this name is already used in the ZIP and make it unique if needed
+                    if final_filename in used_filenames:
+                        name_without_ext = os.path.splitext(final_filename)[0]
+                        ext = os.path.splitext(final_filename)[1]
+                        counter = 1
+                        while final_filename in used_filenames:
+                            final_filename = f"{name_without_ext}_{counter}{ext}"
+                            counter += 1
+                    
+                    # Record this filename as used
+                    used_filenames.add(final_filename)
+                    
+                    app.logger.info(f"ZIP: Final archive filename: {final_filename}")
+                    
+                    # Add the file to the ZIP archive with the proper name
+                    zf.write(file_path, arcname=final_filename)
         
         # Create a unique ID for the ZIP file
         zip_id = str(uuid.uuid4())
@@ -898,30 +1097,112 @@ def cleanup():
         # Remove files older than 1 hour (optional)
         current_time = time.time()
         count = 0
+        total_processed = 0
+        total_uploads = 0
         
         # Cleanup upload folder
         for filename in os.listdir(app.config['UPLOAD_FOLDER']):
             file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             if os.path.isfile(file_path) and (current_time - os.path.getmtime(file_path)) > 3600:
-                os.remove(file_path)
-                count += 1
+                try:
+                    os.remove(file_path)
+                    count += 1
+                    total_uploads += 1
+                    app.logger.info(f"Removed old upload file: {file_path}")
+                    
+                    # Remove from protected_files if it's there
+                    if filename in protected_files:
+                        del protected_files[filename]
+                except Exception as e:
+                    app.logger.error(f"Error removing file {file_path}: {str(e)}")
                 
         # Cleanup processed folder
         for filename in os.listdir(app.config['PROCESSED_FOLDER']):
             file_path = os.path.join(app.config['PROCESSED_FOLDER'], filename)
             if os.path.isfile(file_path) and (current_time - os.path.getmtime(file_path)) > 3600:
-                os.remove(file_path)
-                # Remove from tracking dictionary
-                if filename in processed_files:
-                    del processed_files[filename]
-                count += 1
+                try:
+                    os.remove(file_path)
+                    count += 1
+                    total_processed += 1
+                    app.logger.info(f"Removed old processed file: {file_path}")
+                    
+                    # Remove from tracking dictionary
+                    if filename in processed_files:
+                        del processed_files[filename]
+                except Exception as e:
+                    app.logger.error(f"Error removing file {file_path}: {str(e)}")
                 
         # Save the updated processed files dictionary
         save_processed_files()
                 
-        return jsonify({'message': f'Removed {count} old files'}), 200
+        return jsonify({
+            'status': 'success',
+            'message': f'Removed {count} old files ({total_uploads} uploads, {total_processed} processed)'
+        }), 200
     except Exception as e:
+        app.logger.error(f"Cleanup error: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
+# Add a background thread for automatic cleanup
+def setup_periodic_cleanup():
+    """Set up a background thread to run cleanup periodically"""
+    import threading
+    
+    def cleanup_thread():
+        while True:
+            try:
+                app.logger.info("Running scheduled cleanup")
+                # Remove files older than 1 hour
+                current_time = time.time()
+                cleaned_count = 0
+                
+                # Clean up upload folder
+                for filename in os.listdir(app.config['UPLOAD_FOLDER']):
+                    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                    if os.path.isfile(file_path) and (current_time - os.path.getmtime(file_path)) > 3600:
+                        try:
+                            os.remove(file_path)
+                            cleaned_count += 1
+                            
+                            # Remove from protected_files if it's there
+                            if filename in protected_files:
+                                del protected_files[filename]
+                        except:
+                            pass
+                
+                # Clean up processed folder
+                for filename in os.listdir(app.config['PROCESSED_FOLDER']):
+                    file_path = os.path.join(app.config['PROCESSED_FOLDER'], filename)
+                    if os.path.isfile(file_path) and (current_time - os.path.getmtime(file_path)) > 3600:
+                        try:
+                            os.remove(file_path)
+                            cleaned_count += 1
+                            
+                            # Remove from tracking dictionary
+                            if filename in processed_files:
+                                del processed_files[filename]
+                        except:
+                            pass
+                
+                # Save the updated processed files dictionary
+                if cleaned_count > 0:
+                    try:
+                        save_processed_files()
+                        app.logger.info(f"Scheduled cleanup removed {cleaned_count} files")
+                    except:
+                        pass
+                        
+            except Exception as e:
+                app.logger.error(f"Error in cleanup thread: {str(e)}")
+                
+            # Sleep for 15 minutes
+            time.sleep(15 * 60)
+    
+    # Start the cleanup thread
+    thread = threading.Thread(target=cleanup_thread)
+    thread.daemon = True  # Thread will exit when main thread exits
+    thread.start()
+    app.logger.info("Started background cleanup thread")
 
 @app.route('/get-processed-files', methods=['GET'])
 def get_processed_files():
@@ -1009,6 +1290,10 @@ def check_password():
         input_path = os.path.join(app.config['UPLOAD_FOLDER'], file_id)
         file.save(input_path)
         
+        # Store original filename for later use
+        original_filename = secure_filename(file.filename)
+        app.logger.info(f"Original filename for file_id {file_id}: {original_filename}")
+        
         # Check if the file is password-protected
         try:
             reader = PdfReader(input_path)
@@ -1024,6 +1309,7 @@ def check_password():
                     app.logger.info(f"File is encrypted but can be opened without password: {file.filename}")
                     
                     # We can process this file without password
+                    protected_files[file_id] = original_filename
                     return jsonify({
                         'needs_password': False,
                         'file_id': file_id,
@@ -1032,7 +1318,7 @@ def check_password():
                     })
                 else:
                     # Store original filename for later use - this file needs a password
-                    protected_files[file_id] = file.filename
+                    protected_files[file_id] = original_filename
                     
                     return jsonify({
                         'needs_password': True,
@@ -1041,6 +1327,7 @@ def check_password():
                     })
             else:
                 # Not encrypted at all
+                protected_files[file_id] = original_filename
                 return jsonify({
                     'needs_password': False,
                     'file_id': file_id,
@@ -1051,7 +1338,7 @@ def check_password():
             # Check if the error is related to password protection
             if "password" in str(e).lower():
                 # Store original filename for later use
-                protected_files[file_id] = file.filename
+                protected_files[file_id] = original_filename
                 
                 # If it specifically mentions incorrect password, it definitely needs one
                 return jsonify({
@@ -1074,7 +1361,42 @@ def check_password():
             'message': 'Invalid file type'
         })
 
+@app.route('/session-status', methods=['GET'])
+def session_status():
+    """
+    Check if there are any files in the session that need to be processed
+    This helps with determining if we need to clear data when a tab is closed
+    """
+    try:
+        # Count files in uploads and processed folders
+        upload_files = os.listdir(app.config['UPLOAD_FOLDER'])
+        processed_files_list = os.listdir(app.config['PROCESSED_FOLDER'])
+        
+        upload_count = len(upload_files)
+        processed_count = len(processed_files_list)
+        
+        # Check if we have data in memory
+        protected_count = len(protected_files)
+        processed_dict_count = len(processed_files)
+        
+        return jsonify({
+            'status': 'success',
+            'has_data': upload_count > 0 or processed_count > 0 or protected_count > 0 or processed_dict_count > 0,
+            'counts': {
+                'uploads': upload_count,
+                'processed': processed_count,
+                'protected_files': protected_count,
+                'processed_files_dict': processed_dict_count
+            }
+        }), 200
+    except Exception as e:
+        app.logger.error(f"Session status error: {str(e)}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
 if __name__ == "__main__":
+    # Start the periodic cleanup thread
+    setup_periodic_cleanup()
+    
     # Use PORT from environment if available (for Render.com and other hosting services)
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=False) 
