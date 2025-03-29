@@ -166,19 +166,29 @@ class DonateModal {
             switch(method) {
                 case 'paypal':
                     title = 'PayPal';
+                    this.qrInfo.textContent = info;
+                    this.qrInfo.classList.remove('hidden');
+                    this.copyButton.style.display = 'flex';
                     break;
                 case 'momo':
-                    title = 'MoMo Number';
+                    title = 'MoMo';
+                    this.qrInfo.classList.add('hidden');
+                    this.copyButton.style.display = 'none';
                     break;
                 case 'vietcombank':
                     title = 'Bank Account';
+                    this.qrInfo.textContent = info;
+                    this.qrInfo.classList.remove('hidden');
+                    this.copyButton.style.display = 'flex';
                     break;
                 default:
                     title = 'Payment Information';
+                    this.qrInfo.textContent = info;
+                    this.qrInfo.classList.remove('hidden');
+                    this.copyButton.style.display = 'flex';
             }
             
             this.qrTitle.textContent = title;
-            this.qrInfo.textContent = info;
             
             // Show QR container
             this.qrContainer.classList.add('show');

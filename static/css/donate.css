@@ -13,6 +13,8 @@
     opacity: 0;
     visibility: hidden;
     transition: opacity 0.3s, visibility 0.3s;
+    overflow-y: auto;
+    padding: 30px 0;
 }
 
 .donate-modal.show {
@@ -29,6 +31,7 @@
     position: relative;
     overflow: hidden;
     animation: modalFadeIn 0.5s forwards;
+    margin: auto;
 }
 
 @keyframes modalFadeIn {
@@ -149,7 +152,7 @@
 }
 
 .donate-qr-code {
-    max-width: 280px;
+    max-width: 320px;
     height: auto;
     display: block;
     margin: 0 auto 1rem;
@@ -175,6 +178,10 @@
     font-size: 0.9rem;
     margin-bottom: 1rem;
     word-break: break-all;
+}
+
+.donate-qr-info.hidden {
+    display: none;
 }
 
 .donate-copy-btn {
@@ -233,5 +240,9 @@
     
     .donate-title {
         font-size: 2rem;
+    }
+    
+    .donate-qr-code {
+        max-width: 250px;
     }
 }

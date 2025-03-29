@@ -161,6 +161,9 @@ def unlock():
             # Clean the filename by removing "(SECURED)" text
             cleaned_filename = clean_filename(file.filename)
             
+            # Add "unlocked_" prefix to the cleaned filename
+            prefixed_filename = f"unlocked_{cleaned_filename}"
+            
             # Generate unique IDs for input and output files
             input_id = str(uuid.uuid4())
             output_id = str(uuid.uuid4())
@@ -175,14 +178,14 @@ def unlock():
             # Save original file
             file.save(input_path)
             
-            # Store the mapping between output ID and cleaned filename for download
-            display_filename = secure_filename(cleaned_filename)
+            # Store the mapping between output ID and prefixed filename for download
+            display_filename = secure_filename(prefixed_filename)
             processed_files[output_filename] = display_filename
             save_processed_files()  # Save the updated processed files dictionary
             
             if unlock_pdf(input_path, output_path):
                 results.append({
-                    'filename': cleaned_filename,
+                    'filename': prefixed_filename,
                     'status': 'success',
                     'download_url': f'/download/{output_filename}'
                 })
@@ -249,6 +252,11 @@ def download_all():
                 if os.path.exists(file_path):
                     # Get the display filename for the ZIP archive
                     display_filename = processed_files.get(filename, filename)
+                    
+                    # Make sure the display filename has the "unlocked_" prefix
+                    if not display_filename.startswith("unlocked_"):
+                        display_filename = f"unlocked_{display_filename}"
+                    
                     # Add the file to the ZIP archive
                     zf.write(file_path, arcname=display_filename)
         
