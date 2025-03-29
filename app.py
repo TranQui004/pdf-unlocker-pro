@@ -1,7 +1,6 @@
 import os
 import stat
 import platform
-import logging
 from flask import Flask, request, render_template, send_file, jsonify
 from werkzeug.utils import secure_filename
 from PyPDF2 import PdfReader, PdfWriter
@@ -24,40 +23,7 @@ print(f"Running on: {platform.system()} {platform.release()}")
 print(f"Python version: {platform.python_version()}")
 print(f"Is Render: {IS_RENDER}")
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler()
-    ]
-)
-
 app = Flask(__name__)
-# Add log handler to Flask logger
-if app.logger.handlers:
-    app.logger.handlers = []
-app.logger.propagate = True
-
-# Đảm bảo static folder được định nghĩa đúng
-app.static_folder = 'static'
-app.static_url_path = '/static'
-
-# Security headers middleware - sửa Content-Security-Policy để cho phép load CSS
-@app.after_request
-def add_security_headers(response):
-    # Content Security Policy - điều chỉnh để cho phép tải tất cả tài nguyên
-    # Tạm thời vô hiệu hóa CSP để kiểm tra xem vấn đề có phải do CSP không
-    # response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' cdnjs.cloudflare.com cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com cdnjs.cloudflare.com cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com cdnjs.cloudflare.com; img-src 'self' data:;"
-    
-    # Prevent MIME type sniffing
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    # Clickjacking protection
-    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
-    # XSS protection
-    response.headers['X-XSS-Protection'] = '1; mode=block'
-    return response
-
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
 # Create uploads and processed folders in the current directory
@@ -111,31 +77,13 @@ processed_files = {}
 # Dictionary to track password-protected files
 protected_files = {}
 
-# If processed files database doesn't exist, create it
-if not os.path.exists(PROCESSED_FILES_DB):
-    try:
-        with open(PROCESSED_FILES_DB, 'w') as f:
-            json.dump({}, f)
-            app.logger.info(f"Created new processed files database at {PROCESSED_FILES_DB}")
-    except Exception as e:
-        app.logger.error(f"Failed to create processed files database: {str(e)}")
-
 # Load processed files data from file if it exists
 def load_processed_files():
     global processed_files
     if os.path.exists(PROCESSED_FILES_DB):
         try:
             with open(PROCESSED_FILES_DB, 'r') as f:
-                try:
-                    processed_files = json.load(f)
-                    app.logger.info(f"Loaded {len(processed_files)} processed files from database")
-                except json.JSONDecodeError as json_err:
-                    app.logger.error(f"Error decoding JSON from database: {str(json_err)}")
-                    # Backup the corrupted file
-                    backup_path = f"{PROCESSED_FILES_DB}.bak.{int(time.time())}"
-                    shutil.copy2(PROCESSED_FILES_DB, backup_path)
-                    app.logger.info(f"Backed up corrupted database to {backup_path}")
-                    processed_files = {}
+                processed_files = json.load(f)
         except Exception as e:
             app.logger.error(f"Error loading processed files data: {str(e)}")
             processed_files = {}
@@ -168,47 +116,6 @@ def save_processed_files():
 
 # Load processed files on startup
 load_processed_files()
-
-# Cleanup old files on startup
-def cleanup_on_startup():
-    try:
-        current_time = time.time()
-        removed_count = 0
-        
-        # Clean files older than 24 hours
-        for folder in [UPLOAD_FOLDER, PROCESSED_FOLDER]:
-            if not os.path.exists(folder):
-                continue
-                
-            for filename in os.listdir(folder):
-                file_path = os.path.join(folder, filename)
-                if os.path.isfile(file_path) and (current_time - os.path.getmtime(file_path)) > 86400:  # 24 hours
-                    try:
-                        os.remove(file_path)
-                        removed_count += 1
-                    except Exception as e:
-                        app.logger.error(f"Failed to remove old file {file_path}: {str(e)}")
-        
-        # Also remove files that are in processed_files but no longer exist
-        missing_files = []
-        for filename in processed_files:
-            file_path = os.path.join(PROCESSED_FOLDER, filename)
-            if not os.path.exists(file_path):
-                missing_files.append(filename)
-                
-        for filename in missing_files:
-            processed_files.pop(filename, None)
-            
-        # Save the updated processed files
-        if missing_files:
-            save_processed_files()
-            
-        app.logger.info(f"Startup cleanup removed {removed_count} old files and {len(missing_files)} missing entries")
-    except Exception as e:
-        app.logger.error(f"Error in startup cleanup: {str(e)}")
-
-# Run cleanup on startup
-cleanup_on_startup()
 
 # Define allowed file types
 ALLOWED_EXTENSIONS = {'pdf'}
@@ -710,7 +617,7 @@ def unlock_with_password():
     
     # Try to unlock the PDF
     try:
-        result = unlock_pdf(input_path, output_path, password, file_id=file_id)
+        result = unlock_pdf(input_path, output_path, password)
         
         if include_debug:
             debug_info['unlock_result'] = result
@@ -754,13 +661,7 @@ def download(filename):
         file_path = os.path.join(app.config['PROCESSED_FOLDER'], filename)
         
         if not os.path.exists(file_path):
-            app.logger.warning(f"Requested download file not found: {file_path}")
-            # Nếu file không tồn tại, hãy xóa nó khỏi tracking
-            if filename in processed_files:
-                del processed_files[filename]
-                save_processed_files()
-                app.logger.info(f"Removed {filename} from tracking as file doesn't exist")
-            return jsonify({'error': 'File not found. It may have been deleted or expired.'}), 404
+            return jsonify({'error': f'File not found: {file_path}'}), 404
         
         # Get the display filename from our tracking dictionary or use the filename as is
         display_filename = processed_files.get(filename, filename)
@@ -774,7 +675,7 @@ def download(filename):
         return response
     except Exception as e:
         app.logger.error(f"Download error: {str(e)}")
-        return jsonify({'error': f'Error downloading file: {str(e)}'}), 500
+        return jsonify({'error': str(e)}), 404
 
 @app.route('/download-all', methods=['POST'])
 def download_all():
@@ -827,8 +728,7 @@ def download_zip(filename):
         zip_path = os.path.join(app.config['PROCESSED_FOLDER'], filename)
         
         if not os.path.exists(zip_path):
-            app.logger.warning(f"Requested ZIP file not found: {zip_path}")
-            return jsonify({'error': 'ZIP file not found. It may have been deleted or expired.'}), 404
+            return jsonify({'error': f'ZIP file not found: {zip_path}'}), 404
         
         # Return the ZIP file
         response = send_file(
@@ -1021,134 +921,7 @@ def emergency_reset():
         app.logger.error(f"Emergency reset error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/check-file/<filename>')
-def check_file(filename):
-    try:
-        file_path = os.path.join(app.config['PROCESSED_FOLDER'], filename)
-        
-        if not os.path.exists(file_path):
-            # Nếu file không tồn tại, hãy xóa nó khỏi tracking
-            if filename in processed_files:
-                del processed_files[filename]
-                save_processed_files()
-                app.logger.info(f"Removed {filename} from tracking as file doesn't exist")
-            return jsonify({
-                'status': 'error',
-                'exists': False,
-                'message': 'File not found. It may have been deleted or expired.'
-            })
-        
-        # Kiểm tra file size để đảm bảo không bị lỗi
-        file_size = os.path.getsize(file_path)
-        if file_size == 0:
-            return jsonify({
-                'status': 'error',
-                'exists': True,
-                'size': 0,
-                'message': 'File exists but appears to be empty.'
-            })
-            
-        return jsonify({
-            'status': 'success',
-            'exists': True,
-            'size': file_size,
-            'message': 'File is ready for download'
-        })
-    except Exception as e:
-        app.logger.error(f"Check file error: {str(e)}")
-        return jsonify({
-            'status': 'error',
-            'message': f'Error checking file: {str(e)}'
-        }), 500
-
-@app.route('/health', methods=['GET'])
-def health_check():
-    """
-    Health check endpoint to verify the application is running properly.
-    """
-    try:
-        # Check if we can write to the folders
-        folder_status = {}
-        for folder_name, folder_path in [
-            ('upload', UPLOAD_FOLDER), 
-            ('processed', PROCESSED_FOLDER), 
-            ('data', DATA_FOLDER)
-        ]:
-            try:
-                # Check if folder exists
-                folder_exists = os.path.exists(folder_path)
-                
-                # Check if we can write to folder
-                can_write = False
-                if folder_exists:
-                    test_file = os.path.join(folder_path, f'test_write_{uuid.uuid4()}.tmp')
-                    with open(test_file, 'w') as f:
-                        f.write('test')
-                    os.remove(test_file)
-                    can_write = True
-                    
-                folder_status[folder_name] = {
-                    'exists': folder_exists,
-                    'can_write': can_write
-                }
-            except Exception as e:
-                folder_status[folder_name] = {
-                    'exists': folder_exists if 'folder_exists' in locals() else False,
-                    'can_write': False,
-                    'error': str(e)
-                }
-                
-        # Check if we can read/write the database
-        db_status = {
-            'exists': os.path.exists(PROCESSED_FILES_DB),
-            'can_read': False,
-            'can_write': False
-        }
-        
-        try:
-            if db_status['exists']:
-                with open(PROCESSED_FILES_DB, 'r') as f:
-                    json.load(f)
-                db_status['can_read'] = True
-        except Exception as e:
-            db_status['read_error'] = str(e)
-            
-        try:
-            temp_db = os.path.join(DATA_FOLDER, f'test_db_{uuid.uuid4()}.json')
-            with open(temp_db, 'w') as f:
-                json.dump({'test': 'data'}, f)
-            os.remove(temp_db)
-            db_status['can_write'] = True
-        except Exception as e:
-            db_status['write_error'] = str(e)
-            
-        # Return status information
-        return jsonify({
-            'status': 'healthy',
-            'version': '1.0.0',
-            'env': {
-                'is_render': IS_RENDER,
-                'python_version': platform.python_version(),
-                'platform': f"{platform.system()} {platform.release()}"
-            },
-            'folders': folder_status,
-            'database': db_status,
-            'processed_files_count': len(processed_files),
-            'protected_files_count': len(protected_files),
-            'timestamp': datetime.datetime.now().isoformat()
-        })
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'error': str(e),
-            'timestamp': datetime.datetime.now().isoformat()
-        }), 500
-
 if __name__ == "__main__":
     # Use PORT from environment if available (for Render.com and other hosting services)
     port = int(os.environ.get("PORT", 5000))
-    app.logger.info(f"Starting server on port {port}")
-    app.logger.info(f"Running on platform: {platform.system()} {platform.release()}")
-    app.logger.info(f"Python version: {platform.python_version()}")
-    app.logger.info(f"Is Render environment: {IS_RENDER}")
     app.run(host='0.0.0.0', port=port, debug=False) 
