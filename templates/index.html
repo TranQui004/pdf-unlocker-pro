@@ -840,7 +840,8 @@
                         // Thêm vào danh sách file đã xử lý
                         processedFiles.push({
                             filename: result.filename,
-                            url: result.download_url
+                            url: result.download_url,
+                            timestamp: Date.now() // Add timestamp for sorting
                         });
                         
                         // Add to list of processed file IDs
@@ -874,6 +875,7 @@
                 });
                 
                 console.log("Files before filtering:", [...files]);
+                console.log("Processed files count:", processedFiles.length);
                 
                 // Xóa các file đã xử lý thành công khỏi danh sách - method 1
                 files = files.filter(file => !file.processed);
@@ -901,9 +903,18 @@
                 
                 console.log("Files after filtering:", [...files]);
                 
-                // Cập nhật giao diện
+                // Cập nhật giao diện - update file list first
                 updateFileList();
-                updateDownloadHistory();
+                
+                // Then update download history with proper wait to ensure visibility
+                setTimeout(() => {
+                    updateDownloadHistory();
+                    
+                    // Check if we need to scroll to the download section
+                    if (successCount > 0) {
+                        downloadHistory.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }
+                }, 100);
                 
                 // Hiển thị hộp thoại nhập mật khẩu cho file cần mật khẩu đầu tiên
                 const passwordFiles = files.filter(file => file.passwordProtected && file.fileId);
@@ -937,16 +948,27 @@
             });
         }
 
+        // Update the download history
         function updateDownloadHistory() {
+            console.log("Updating download history with", processedFiles.length, "files");
             if (processedFiles.length === 0) {
                 downloadHistory.classList.add('hidden');
                 return;
             }
             
+            // Always show the download history section when we have processed files
             downloadHistory.classList.remove('hidden');
             downloadLinks.innerHTML = '';
             
-            processedFiles.forEach((file, index) => {
+            // Sort processed files by most recently added first (if timestamp available)
+            const sortedFiles = [...processedFiles].sort((a, b) => {
+                if (a.timestamp && b.timestamp) {
+                    return b.timestamp - a.timestamp;
+                }
+                return 0; // Keep original order if no timestamps
+            });
+            
+            sortedFiles.forEach((file, index) => {
                 const linkItem = document.createElement('div');
                 linkItem.className = 'flex items-center justify-between bg-gray-50 p-3 rounded-lg animate__animated animate__fadeIn';
                 linkItem.innerHTML = `
@@ -965,6 +987,9 @@
                 `;
                 downloadLinks.appendChild(linkItem);
             });
+            
+            // Ensure the section is scrolled to view all entries
+            downloadLinks.scrollTop = 0;
         }
 
         function removeFromHistory(index) {
@@ -1380,11 +1405,14 @@
                     tryPasswordBtn.disabled = false;
                     tryPasswordBtn.textContent = 'Try Common Passwords';
                     
-                    // Add to processed files
+                    // Add to processed files with timestamp
                     processedFiles.push({
                         filename: result.filename,
-                        url: result.download_url
+                        url: result.download_url,
+                        timestamp: Date.now() // Add timestamp
                     });
+                    
+                    console.log("Added to processed files (common password). Current count:", processedFiles.length);
                     
                     // Find the file in the array and mark it as processed
                     console.log("Looking for fileId in common passwords function:", fileId, "in files:", files);
@@ -1417,6 +1445,9 @@
                     // Force re-update the file list display to reflect removal
                     updateFileList();
                     checkEmptyFileList();
+                    
+                    // Update download history AFTER modifying files array
+                    updateDownloadHistory();
                     
                     // Close the modal
                     const passwordModal = document.getElementById('passwordModal');
@@ -1463,6 +1494,9 @@
             updateFileList();
             checkEmptyFileList();
             
+            // Make sure download history is up to date
+            updateDownloadHistory();
+            
             // Find the next password-protected file
             const passwordFile = files.find(file => file.passwordProtected);
             
@@ -1479,6 +1513,16 @@
                 if (files.length === 0 && processedFiles.length > 0) {
                     console.log("All files processed, showing success notification");
                     showNotification('All files have been processed successfully!', 'success');
+                    
+                    // Force another update of download history to ensure visibility
+                    setTimeout(() => {
+                        updateDownloadHistory();
+                        
+                        // Scroll to download history for better visibility
+                        if (downloadHistory) {
+                            downloadHistory.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                        }
+                    }, 200);
                 }
                 
                 // Force additional check to clear any lingering files
@@ -1536,21 +1580,14 @@
                 if (data.status === 'success') {
                     showNotification('PDF unlocked successfully!', 'success');
                     
-                    // Add to processed files
+                    // Add to processed files with timestamp
                     processedFiles.push({
                         filename: data.filename,
-                        url: data.download_url
+                        url: data.download_url,
+                        timestamp: Date.now() // Add timestamp
                     });
                     
-                    // Update download history
-                    updateDownloadHistory();
-                    
-                    // Close the password modal
-                    const passwordModal = document.getElementById('passwordModal');
-                    if (passwordModal) {
-                        passwordModal.style.display = 'none';
-                        modalActive = false;
-                    }
+                    console.log("Added to processed files. Current count:", processedFiles.length);
                     
                     // Find the file in the array and mark it as processed
                     console.log("Looking for fileId:", fileId, "in files:", files);
@@ -1584,6 +1621,16 @@
                     
                     // Update the file list display
                     updateFileList();
+                    
+                    // Update download history AFTER modifying files array
+                    updateDownloadHistory();
+                    
+                    // Close the password modal
+                    const passwordModal = document.getElementById('passwordModal');
+                    if (passwordModal) {
+                        passwordModal.style.display = 'none';
+                        modalActive = false;
+                    }
                     
                     // Check for more password files to process
                     processNextPasswordFile();
