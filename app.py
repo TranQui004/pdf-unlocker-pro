@@ -145,6 +145,11 @@ def unlock_pdf(input_path, output_path, password=None):
         # First attempt to open PDF with password if provided
         if password:
             try:
+                # Quick check for numeric password
+                numeric_password = password.isdigit()
+                if numeric_password:
+                    app.logger.info(f"Numeric password detected: {password}")
+                
                 # Try different password encodings if necessary (production environments might have encoding issues)
                 try:
                     # First try with the password as provided
@@ -154,6 +159,29 @@ def unlock_pdf(input_path, output_path, password=None):
                         reader.decrypt(password)
                 except Exception as e1:
                     app.logger.warning(f"First password attempt failed: {str(e1)}")
+                    # For numeric passwords, try several formats
+                    if numeric_password:
+                        try:
+                            app.logger.info("Trying numeric password special handling")
+                            # Try as int
+                            try:
+                                int_pwd = int(password)
+                                reader = PdfReader(input_path, password=int_pwd)
+                                if reader.is_encrypted:
+                                    reader.decrypt(int_pwd)
+                            except Exception as int_err:
+                                app.logger.warning(f"Int password failed: {str(int_err)}")
+                            
+                            # Try as bytes
+                            try:
+                                bytes_pwd = password.encode('utf-8')
+                                reader = PdfReader(input_path, password=bytes_pwd)
+                                if reader.is_encrypted:
+                                    reader.decrypt(bytes_pwd)
+                            except Exception as bytes_err:
+                                app.logger.warning(f"Bytes password failed: {str(bytes_err)}")
+                        except Exception as num_err:
+                            app.logger.warning(f"Numeric special handling failed: {str(num_err)}")
                     # Try encoding password as UTF-8 explicitly
                     try:
                         app.logger.info(f"Attempting with UTF-8 encoded password")
@@ -283,6 +311,21 @@ def unlock_pdf(input_path, output_path, password=None):
                             password.encode('ascii', errors='replace').decode('ascii')
                         ]
                         
+                        # Special handling for numeric passwords
+                        if password.isdigit():
+                            app.logger.info("Numeric password detected, adding special handling")
+                            # Add byte versions of the password (common issue with numeric passwords)
+                            try_passwords.extend([
+                                password.encode('utf-8'),  # Add byte string version
+                                bytes(password, 'utf-8'),  # Alternative byte encoding
+                                bytes([int(password)]) if len(password) == 1 and int(password) < 256 else b'',  # For single digit passwords
+                                # Try converting to int if it's a number (some PDFs expect numbers not strings)
+                                int(password) if password.isdigit() else None
+                            ])
+                            
+                        # Remove any None values from the list
+                        try_passwords = [p for p in try_passwords if p is not None]
+                        
                         success = False
                         render_reader = None
                         for pwd in try_passwords:
@@ -297,6 +340,44 @@ def unlock_pdf(input_path, output_path, password=None):
                             except Exception as pwd_error:
                                 app.logger.warning(f"Password attempt failed on Render: {str(pwd_error)}")
                                 continue
+                        
+                        # Special handling for numeric passwords if previous attempts failed
+                        if not success and password.isdigit():
+                            app.logger.info("Trying direct extraction for numeric password")
+                            try:
+                                # Save the password to a temp file (sometimes works better on Render)
+                                pwd_file_path = os.path.join(app.config['DATA_FOLDER'], f"pwd_{uuid.uuid4()}.txt")
+                                with open(pwd_file_path, 'w') as f:
+                                    f.write(password)
+                                    
+                                app.logger.info(f"Password saved to file: {pwd_file_path}")
+                                
+                                # Now try to read the password from the file
+                                with open(pwd_file_path, 'r') as f:
+                                    file_pwd = f.read().strip()
+                                    
+                                app.logger.info(f"Password read from file: {file_pwd}")
+                                
+                                # Try with this file-read password
+                                try:
+                                    direct_reader = PdfReader(input_path, password=file_pwd)
+                                    if direct_reader.is_encrypted:
+                                        direct_reader.decrypt(file_pwd)
+                                    
+                                    if not direct_reader.is_encrypted:
+                                        # It worked!
+                                        render_reader = direct_reader
+                                        success = True
+                                        app.logger.info("File-based password worked!")
+                                except Exception as file_pwd_error:
+                                    app.logger.warning(f"File-based password failed: {str(file_pwd_error)}")
+                                
+                                # Clean up the temp password file
+                                if os.path.exists(pwd_file_path):
+                                    os.remove(pwd_file_path)
+                                    
+                            except Exception as numeric_error:
+                                app.logger.error(f"Numeric password special handling failed: {str(numeric_error)}")
                         
                         if not success:
                             app.logger.error("All password attempts failed on Render")
@@ -429,14 +510,14 @@ def unlock_pdf(input_path, output_path, password=None):
         except Exception as method4_error:
             app.logger.error(f"Fourth approach error: {str(method4_error)}")
             
-        # Clean up temporary files before returning error
-        _cleanup_temp_files(temp_files)
+            # Clean up temporary files before returning error
+            _cleanup_temp_files(temp_files)
             
-        # If we've reached here, all methods have failed
-        return {
-            "status": "error", 
-            "message": "Failed to unlock PDF. The file may have strong encryption or requires a different password."
-        }
+            # If we've reached here, all methods have failed
+            return {
+                "status": "error", 
+                "message": "Failed to unlock PDF. The file may have strong encryption or requires a different password."
+            }
     except Exception as e:
         # Clean up temporary files in case of exception
         _cleanup_temp_files(temp_files)
@@ -566,12 +647,15 @@ def unlock_with_password():
     no_password_attempt = data.get('no_password_attempt', False)
     # Check if ASCII mode was used (helps with special characters)
     ascii_mode = data.get('ascii_mode', False)
+    # Check if numeric mode was used (helps with numeric passwords on Render)
+    numeric_mode = data.get('numeric_mode', False)
     
     # Enhanced logging for production debugging
     app.logger.info(f"Password submitted for file_id: {file_id}")
     app.logger.info(f"Password length: {len(password)}")
     app.logger.info(f"Password first/last char: {password[0] if password else ''}/{password[-1] if password else ''}")
     app.logger.info(f"ASCII mode: {ascii_mode}")
+    app.logger.info(f"Numeric mode: {numeric_mode}")
     
     # For ASCII mode, ensure proper encoding 
     if ascii_mode:
@@ -583,6 +667,18 @@ def unlock_with_password():
             app.logger.info(f"ASCII cleaned password length: {len(password)}")
         except Exception as e:
             app.logger.error(f"Error in ASCII cleaning: {str(e)}")
+    
+    # For numeric mode, make sure it's handled as a number
+    if numeric_mode and password.isdigit():
+        app.logger.info(f"Numeric password mode active for password: {password}")
+        # We'll use specialized handling in the unlock_pdf function
+        # Just ensure it's really a number
+        try:
+            # Keep as string but verify it's a valid number
+            int(password)  # This is just to verify
+            app.logger.info("Valid numeric password confirmed")
+        except:
+            app.logger.warning("Numeric password is not a valid number")
     
     try:
         # Construct the paths
@@ -599,6 +695,105 @@ def unlock_with_password():
         output_id = str(uuid.uuid4())
         output_filename = f"{output_id}.pdf"
         output_path = os.path.join(app.config['PROCESSED_FOLDER'], output_filename)
+        
+        # Direct Render-specific handling for numeric passwords
+        if IS_RENDER and numeric_mode and password.isdigit():
+            app.logger.info("Using specialized Render numeric password handling")
+            
+            # We'll try a very direct approach first
+            try:
+                # Get original filename
+                original_filename = protected_files.get(file_id, "document.pdf")
+                
+                # Create a special numeric password handler
+                numeric_output = output_path + ".num"
+                success = False
+                
+                # Try multiple methods specifically for numeric passwords on Render
+                
+                # Method 1: Direct int approach
+                try:
+                    app.logger.info("Trying method 1: Direct int")
+                    int_pwd = int(password)
+                    reader = PdfReader(input_path, password=int_pwd)
+                    if reader.is_encrypted:
+                        reader.decrypt(int_pwd)
+                    
+                    writer = PdfWriter()
+                    for page in reader.pages:
+                        writer.add_page(page)
+                    
+                    with open(numeric_output, 'wb') as f:
+                        writer.write(f)
+                    
+                    # Verify
+                    if os.path.exists(numeric_output) and os.path.getsize(numeric_output) > 0:
+                        verify = PdfReader(numeric_output)
+                        if not verify.is_encrypted:
+                            success = True
+                            app.logger.info("Method 1 worked!")
+                except Exception as e1:
+                    app.logger.warning(f"Method 1 failed: {str(e1)}")
+                
+                # Method 2: Bytes approach
+                if not success:
+                    try:
+                        app.logger.info("Trying method 2: Bytes")
+                        bytes_pwd = password.encode('utf-8')
+                        reader = PdfReader(input_path, password=bytes_pwd)
+                        if reader.is_encrypted:
+                            reader.decrypt(bytes_pwd)
+                        
+                        writer = PdfWriter()
+                        for page in reader.pages:
+                            writer.add_page(page)
+                        
+                        with open(numeric_output, 'wb') as f:
+                            writer.write(f)
+                        
+                        # Verify
+                        if os.path.exists(numeric_output) and os.path.getsize(numeric_output) > 0:
+                            verify = PdfReader(numeric_output)
+                            if not verify.is_encrypted:
+                                success = True
+                                app.logger.info("Method 2 worked!")
+                    except Exception as e2:
+                        app.logger.warning(f"Method 2 failed: {str(e2)}")
+                
+                # If any method worked, process the file
+                if success:
+                    os.replace(numeric_output, output_path)
+                    
+                    # Process filenames
+                    cleaned_filename = clean_filename(original_filename)
+                    prefixed_filename = f"unlocked_{cleaned_filename}"
+                    display_filename = secure_filename(prefixed_filename)
+                    
+                    # Save to processed files
+                    processed_files[output_filename] = display_filename
+                    save_processed_files()
+                    
+                    # Cleanup
+                    if os.path.exists(input_path):
+                        os.remove(input_path)
+                    if file_id in protected_files:
+                        del protected_files[file_id]
+                    if os.path.exists(numeric_output):
+                        os.remove(numeric_output)
+                    
+                    # Return success
+                    return jsonify({
+                        'status': 'success',
+                        'filename': prefixed_filename,
+                        'download_url': f'/download/{output_filename}'
+                    })
+                
+                # If both methods failed, continue to standard approach
+                app.logger.info("Specialized numeric handling failed, continuing to standard methods")
+                
+            except Exception as render_numeric_error:
+                app.logger.error(f"Render numeric error: {str(render_numeric_error)}")
+                # Continue to standard methods
         
         # Special handling for attempting to unlock with empty password
         if no_password_attempt:

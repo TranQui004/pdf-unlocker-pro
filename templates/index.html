@@ -985,6 +985,16 @@
                                         </span>
                                     </span>
                                 </div>
+                                <div class="flex items-center mt-2">
+                                    <input type="checkbox" id="numericPasswordMode" class="mr-2">
+                                    <label for="numericPasswordMode" class="text-sm text-gray-600">Numeric mode</label>
+                                    <span class="ml-1 text-gray-500 cursor-pointer group relative" id="numericModeHelp">
+                                        <i class="fas fa-question-circle"></i>
+                                        <span class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block bg-gray-800 text-white text-xs rounded p-2 w-64">
+                                            Use this if your password is a number (like 123) and it's not working. This mode is specifically designed to help with numeric passwords on cloud servers.
+                                        </span>
+                                    </span>
+                                </div>
                             </div>
                             <div id="passwordError" class="text-red-500 text-sm mb-4 hidden"></div>
                             <div class="flex justify-center space-x-3">
@@ -1058,11 +1068,18 @@
             let password = passwordInput.value;
             const errorElement = document.getElementById('passwordError');
             const useAsciiMode = document.getElementById('useAsciiMode').checked;
+            const numericMode = document.getElementById('numericPasswordMode').checked;
             
             if (!password) {
                 errorElement.textContent = 'Please enter a password';
                 errorElement.classList.remove('hidden');
                 return;
+            }
+            
+            // Auto-check numeric mode if the password is all digits
+            if (password.match(/^\d+$/) && !numericMode) {
+                document.getElementById('numericPasswordMode').checked = true;
+                console.log("Auto-enabled numeric mode for numeric password");
             }
             
             // Process password for ASCII mode if selected
@@ -1099,7 +1116,8 @@
                     body: JSON.stringify({
                         file_id: fileId,
                         password: password,
-                        ascii_mode: useAsciiMode
+                        ascii_mode: useAsciiMode,
+                        numeric_mode: document.getElementById('numericPasswordMode').checked
                     })
                 });
                 
