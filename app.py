@@ -124,15 +124,16 @@ def unlock_pdf(input_path, output_path, password=None):
         # First attempt to open PDF with password if provided
         if password:
             try:
-                reader = PdfReader(input_path, password=password)
-                # Check if document is still encrypted after providing password
+                # Attempt to open with password
+                reader = PdfReader(input_path)
                 if reader.is_encrypted:
-                    return {"status": "error", "message": "Incorrect password"}
+                    # Decrypt the PDF with the provided password
+                    success = reader.decrypt(password)
+                    if success != 1:
+                        return {"status": "error", "message": "Incorrect password"}
             except Exception as e:
-                if "password" in str(e).lower():
-                    return {"status": "error", "message": "Incorrect password"}
-                else:
-                    return {"status": "error", "message": str(e)}
+                app.logger.error(f"Error opening PDF: {str(e)}")
+                return {"status": "error", "message": f"Error opening PDF: {str(e)}"}
         else:
             # Try to open without password
             try:
