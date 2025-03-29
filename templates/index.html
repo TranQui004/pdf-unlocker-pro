@@ -364,6 +364,9 @@
         const uploadProgress = document.getElementById('uploadProgress');
         const processingMessage = document.getElementById('processingMessage');
         let files = [];
+        
+        // Object to track files that need passwords
+        const passwordProtectedFiles = {};
 
         // Track download history
         const downloadHistory = document.getElementById('downloadHistory');
@@ -602,6 +605,7 @@
                 const results = await response.json();
                 let successCount = 0;
                 let errorCount = 0;
+                let passwordCount = 0;
                 
                 // Process each result but don't download automatically
                 for (const result of results) {
@@ -612,6 +616,13 @@
                             filename: result.filename,
                             url: result.download_url
                         });
+                    } else if (result.status === 'needs_password') {
+                        passwordCount++;
+                        // Store file ID for later password submission
+                        passwordProtectedFiles[result.file_id] = result.filename;
+                        
+                        // Show password prompt for this file
+                        showPasswordPrompt(result.file_id, result.filename);
                     } else {
                         errorCount++;
                         showNotification(`Error processing ${result.filename}: ${result.message}`, 'error');
@@ -627,9 +638,16 @@
                     } else {
                         showNotification(`Successfully unlocked ${successCount} files! You can download them individually or use "Download All" for a ZIP archive.`, 'success');
                     }
-                    // Clear file list after successful processing
-                    files = [];
+                    // Clear successfully processed files from the list
+                    files = files.filter((f, index) => {
+                        const result = results[index];
+                        return result && result.status !== 'success';
+                    });
                     updateFileList();
+                }
+                
+                if (passwordCount > 0) {
+                    showNotification(`${passwordCount} file(s) require a password to unlock.`, 'warning');
                 }
                 
                 if (errorCount > 0) {
@@ -642,7 +660,7 @@
                 clearInterval(interval);
                 progressBar.style.width = '0%';
                 uploadStatus.classList.add('hidden');
-                unlockBtn.disabled = false;
+                unlockBtn.disabled = files.length === 0;
                 processingMessage.classList.add('hidden');
             }
         });
@@ -905,6 +923,151 @@
                 }
             }
         });
+
+        // Function to show password prompt
+        function showPasswordPrompt(fileId, filename) {
+            // Create modal if it doesn't exist
+            if (!document.getElementById('passwordModal')) {
+                const modalHtml = `
+                    <div id="passwordModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center hidden">
+                        <div class="bg-white rounded-lg shadow-xl p-6 max-w-md w-full animate__animated animate__fadeInDown">
+                            <div class="text-center mb-4">
+                                <i class="fas fa-lock text-yellow-500 text-4xl"></i>
+                                <h3 class="text-xl font-bold mt-2">Password Required</h3>
+                            </div>
+                            <p class="text-gray-600 mb-4 text-center" id="passwordFileName">
+                                This PDF is password protected.
+                            </p>
+                            <div class="mb-4">
+                                <input type="password" id="pdfPassword" 
+                                    class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                                    placeholder="Enter password">
+                            </div>
+                            <div id="passwordError" class="text-red-500 text-sm mb-4 hidden"></div>
+                            <div class="flex justify-center space-x-4">
+                                <button id="passwordCancelBtn" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg transition-colors">
+                                    Cancel
+                                </button>
+                                <button id="passwordSubmitBtn" class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors">
+                                    Unlock
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                document.body.insertAdjacentHTML('beforeend', modalHtml);
+                
+                // Add event listeners for the modal buttons
+                document.getElementById('passwordCancelBtn').addEventListener('click', closePasswordModal);
+                document.getElementById('passwordSubmitBtn').addEventListener('click', submitPassword);
+                
+                // Add enter key support
+                document.getElementById('pdfPassword').addEventListener('keyup', (e) => {
+                    if (e.key === 'Enter') {
+                        submitPassword();
+                    }
+                });
+            }
+            
+            // Update modal for this file
+            const modal = document.getElementById('passwordModal');
+            const filenameElement = document.getElementById('passwordFileName');
+            const passwordInput = document.getElementById('pdfPassword');
+            const errorElement = document.getElementById('passwordError');
+            
+            // Set the current file ID as a data attribute
+            modal.dataset.fileId = fileId;
+            
+            // Update the filename text
+            filenameElement.textContent = `"${filename}" is password protected. Please enter the password to unlock.`;
+            
+            // Clear any previous input/errors
+            passwordInput.value = '';
+            errorElement.classList.add('hidden');
+            
+            // Show the modal
+            modal.classList.remove('hidden');
+        }
+
+        // Function to close the password modal
+        function closePasswordModal() {
+            const modal = document.getElementById('passwordModal');
+            if (modal) {
+                modal.classList.add('hidden');
+            }
+        }
+
+        // Function to submit password
+        async function submitPassword() {
+            const modal = document.getElementById('passwordModal');
+            const fileId = modal.dataset.fileId;
+            const passwordInput = document.getElementById('pdfPassword');
+            const password = passwordInput.value;
+            const errorElement = document.getElementById('passwordError');
+            
+            if (!password) {
+                errorElement.textContent = 'Please enter a password';
+                errorElement.classList.remove('hidden');
+                return;
+            }
+            
+            // Show loading state
+            const submitBtn = document.getElementById('passwordSubmitBtn');
+            const originalText = submitBtn.textContent;
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Unlocking...';
+            
+            try {
+                const response = await fetch('/unlock-with-password', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        file_id: fileId,
+                        password: password
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    // Add to processed files
+                    processedFiles.push({
+                        filename: result.filename,
+                        url: result.download_url
+                    });
+                    
+                    // Update the download history
+                    updateDownloadHistory();
+                    
+                    // Remove from the password protected files
+                    delete passwordProtectedFiles[fileId];
+                    
+                    // Show success message
+                    showNotification(`Successfully unlocked file with password!`, 'success');
+                    
+                    // Close the modal
+                    closePasswordModal();
+                    
+                    // Update file list
+                    updateFileList();
+                } else {
+                    // Show error
+                    errorElement.textContent = result.message || 'Failed to unlock with the provided password';
+                    errorElement.classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error('Password unlock error:', error);
+                errorElement.textContent = 'An error occurred while unlocking';
+                errorElement.classList.remove('hidden');
+            } finally {
+                // Reset button state
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalText;
+            }
+        }
     </script>
     <script src="{{ url_for('static', filename='js/payment_info.js') }}"></script>
     <script src="{{ url_for('static', filename='js/donate.js') }}"></script>
