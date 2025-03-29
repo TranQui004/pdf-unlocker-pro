@@ -39,11 +39,17 @@ if app.logger.handlers:
     app.logger.handlers = []
 app.logger.propagate = True
 
-# Security headers middleware
+# Đảm bảo static folder được định nghĩa đúng
+app.static_folder = 'static'
+app.static_url_path = '/static'
+
+# Security headers middleware - sửa Content-Security-Policy để cho phép load CSS
 @app.after_request
 def add_security_headers(response):
-    # Content Security Policy
-    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;"
+    # Content Security Policy - điều chỉnh để cho phép tải tất cả tài nguyên
+    # Tạm thời vô hiệu hóa CSP để kiểm tra xem vấn đề có phải do CSP không
+    # response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' cdnjs.cloudflare.com cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com cdnjs.cloudflare.com cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com cdnjs.cloudflare.com; img-src 'self' data:;"
+    
     # Prevent MIME type sniffing
     response.headers['X-Content-Type-Options'] = 'nosniff'
     # Clickjacking protection
