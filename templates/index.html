@@ -568,12 +568,14 @@
                     if (response.ok) {
                         const result = await response.json();
                         
+                        // Lưu file_id bất kể file có cần mật khẩu hay không
+                        if (result.file_id) {
+                            file.fileId = result.file_id;
+                        }
+                        
                         if (result.needs_password) {
                             // Mark the file as password-protected
                             file.passwordProtected = true;
-                            
-                            // Store the file ID for later use
-                            file.fileId = result.file_id;
                             
                             // Update the file list to show password protection indicator
                             updateFileList();
@@ -715,11 +717,15 @@
             }, 300);
         }
 
-        unlockBtn.addEventListener('click', async () => {
-            if (files.length === 0) return;
-
-            unlockBtn.disabled = true;
+        function unlockPDFs() {
+            if (files.length === 0) {
+                notification('Please select at least one PDF file', 'error');
+                return;
+            }
+            
+            // Show processing message
             processingMessage.classList.remove('hidden');
+            unlockBtn.disabled = true;
             
             // Show upload progress
             uploadStatus.classList.remove('hidden');
@@ -740,79 +746,106 @@
                     }, 500);
                 }
             }, 200);
-
-            const formData = new FormData();
-            files.forEach(file => formData.append('files[]', file));
-
-            try {
-                const response = await fetch('/unlock', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                if (!response.ok) {
-                    throw new Error(`Server error: ${response.status} ${response.statusText}`);
+            
+            // Chia tệp thành 2 nhóm: tệp có password và tệp không có password
+            const passwordFiles = files.filter(file => file.passwordProtected);
+            const regularFiles = files.filter(file => !file.passwordProtected);
+            
+            // Kiểm tra nếu tất cả các file đều cần password
+            if (regularFiles.length === 0 && passwordFiles.length > 0) {
+                clearInterval(interval);
+                uploadStatus.classList.add('hidden');
+                processingMessage.classList.add('hidden');
+                unlockBtn.disabled = false;
+                
+                // Hiển thị hộp thoại yêu cầu mật khẩu cho file đầu tiên
+                if (passwordFiles[0].fileId) {
+                    showPasswordModal(passwordFiles[0].fileId, passwordFiles[0].name);
                 }
-
-                const results = await response.json();
+                return;
+            }
+            
+            // Tạo danh sách các file cần xử lý (không cần password)
+            const formData = new FormData();
+            
+            // Thêm cả regular files và files có fileId nhưng không passwordProtected
+            regularFiles.forEach(file => {
+                if (file.fileId) {
+                    // Nếu file đã có fileId (đã được tải lên), chỉ cần gửi thông tin fileId
+                    formData.append('file_ids[]', file.fileId);
+                } else {
+                    // Nếu không, gửi file để upload
+                    formData.append('files[]', file);
+                }
+            });
+            
+            // Gửi request đến server
+            fetch('/unlock', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(results => {
                 console.log("Server response:", results); // Debug information
                 
                 let successCount = 0;
                 let errorCount = 0;
                 let passwordCount = 0;
                 
-                // Process each result but don't download automatically
-                for (let i = 0; i < results.length; i++) {
-                    const result = results[i];
-                    const file = files[i];
+                // Xử lý kết quả
+                results.forEach(result => {
+                    const file = files.find(f => f.name === result.filename || 
+                                              (result.file_id && f.fileId === result.file_id));
                     
                     if (result.status === 'success') {
                         successCount++;
-                        // Add to processed files list
+                        // Thêm vào danh sách file đã xử lý
                         processedFiles.push({
                             filename: result.filename,
                             url: result.download_url
                         });
+                        
+                        // Đánh dấu file này đã được xử lý để xóa khỏi danh sách
+                        if (file) file.processed = true;
                     } else if (result.status === 'needs_password') {
                         passwordCount++;
-                        // Store file ID for later password submission
-                        const fileId = result.file_id;
                         
-                        // Add the file ID to the file object for reference 
-                        file.fileId = fileId;
-                        file.passwordProtected = true;
+                        // Lưu file_id và đánh dấu file cần password
+                        if (file) {
+                            file.fileId = result.file_id;
+                            file.passwordProtected = true;
+                        }
                         
-                        // Store in password protected files dictionary
-                        passwordProtectedFiles[fileId] = result.filename;
-                        
-                        // Show password prompt for this file
-                        showPasswordModal(fileId, result.filename);
+                        // Lưu vào từ điển file cần mật khẩu
+                        passwordProtectedFiles[result.file_id] = result.filename;
                     } else {
                         errorCount++;
-                        // Mark the file as having an error for the UI
-                        file.hasError = true;
-                        file.errorMessage = result.message;
+                        // Đánh dấu file có lỗi
+                        if (file) {
+                            file.hasError = true;
+                            file.errorMessage = result.message;
+                        }
                         
-                        showNotification(`Error processing ${result.filename}: ${result.message}`, 'error');
+                        showNotification(`Error processing file: ${result.message}`, 'error');
                     }
-                }
+                });
                 
-                // Update the UI with the password-protected status
+                // Xóa các file đã xử lý khỏi danh sách
+                files = files.filter(file => !file.processed);
+                
+                // Cập nhật giao diện
                 updateFileList();
-                
-                // Update the download history section
                 updateDownloadHistory();
                 
+                // Hiển thị hộp thoại nhập mật khẩu cho file cần mật khẩu đầu tiên
+                const passwordFiles = files.filter(file => file.passwordProtected && file.fileId);
+                if (passwordFiles.length > 0) {
+                    showPasswordModal(passwordFiles[0].fileId, passwordFiles[0].name);
+                }
+                
+                // Hiển thị thông báo
                 if (successCount > 0) {
-                    if (successCount === 1) {
-                        showNotification(`Successfully unlocked 1 file! You can now download it below.`, 'success');
-                    } else {
-                        showNotification(`Successfully unlocked ${successCount} files! You can download them individually or use "Download All" for a ZIP archive.`, 'success');
-                    }
-                    
-                    // Remove successfully processed files from the list
-                    files = files.filter(file => !file.fileId && !file.hasError);
-                    updateFileList();
+                    showNotification(`Successfully unlocked ${successCount} file(s)!`, 'success');
                 }
                 
                 if (passwordCount > 0) {
@@ -820,19 +853,21 @@
                 }
                 
                 if (errorCount > 0) {
-                    showNotification(`Failed to process ${errorCount} file(s). Please try again.`, 'warning');
+                    showNotification(`Failed to process ${errorCount} file(s).`, 'error');
                 }
-            } catch (error) {
+            })
+            .catch(error => {
                 console.error('Processing error:', error);
                 showNotification(`An error occurred: ${error.message}`, 'error');
-            } finally {
+            })
+            .finally(() => {
                 clearInterval(interval);
                 progressBar.style.width = '0%';
                 uploadStatus.classList.add('hidden');
                 unlockBtn.disabled = files.length === 0;
                 processingMessage.classList.add('hidden');
-            }
-        });
+            });
+        }
 
         function updateDownloadHistory() {
             if (processedFiles.length === 0) {

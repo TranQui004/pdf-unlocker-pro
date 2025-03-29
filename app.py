@@ -453,122 +453,194 @@ def index():
 def unlock():
     global protected_files
     
-    # Check if any files were uploaded
-    if 'files[]' not in request.files:
-        return jsonify({'status': 'error', 'message': 'No files were uploaded'}), 400
-    
-    files = request.files.getlist('files[]')
     results = []
     
-    for file in files:
-        if file and allowed_file(file.filename):
-            # Generate a secure filename to prevent directory traversal attacks
-            filename = secure_filename(file.filename)
-            
-            # Generate a unique ID for this file
-            file_id = str(uuid.uuid4())
-            
-            # Save the file with the unique ID as the filename
-            input_path = os.path.join(app.config['UPLOAD_FOLDER'], file_id)
-            file.save(input_path)
-            
-            # Create the output filename and path
-            output_filename = f"unlocked_{file_id}"
-            output_path = os.path.join(app.config['PROCESSED_FOLDER'], output_filename)
-            
-            # Track this file's original name by its ID
-            protected_files[file_id] = filename
-            
-            # Try to unlock the PDF without a password first
-            try:
-                # First check if the file is a valid PDF
+    # Trường hợp 1: Xử lý files[] - các file mới được tải lên
+    if 'files[]' in request.files:
+        files = request.files.getlist('files[]')
+        
+        for file in files:
+            if file and allowed_file(file.filename):
+                # Generate a secure filename to prevent directory traversal attacks
+                filename = secure_filename(file.filename)
+                
+                # Generate a unique ID for this file
+                file_id = str(uuid.uuid4())
+                
+                # Save the file with the unique ID as the filename
+                input_path = os.path.join(app.config['UPLOAD_FOLDER'], file_id)
+                file.save(input_path)
+                
+                # Create the output filename and path
+                output_filename = f"unlocked_{file_id}"
+                output_path = os.path.join(app.config['PROCESSED_FOLDER'], output_filename)
+                
+                # Track this file's original name by its ID
+                protected_files[file_id] = filename
+                
+                # Try to unlock the PDF
                 try:
-                    reader = PdfReader(input_path)
-                    
-                    # Check if the PDF is password-protected
-                    if reader.is_encrypted:
-                        app.logger.info(f"PDF is password-protected: {filename}")
-                        # Return info that password is needed
-                        results.append({
-                            'file_id': file_id,
-                            'filename': file.filename,
-                            'status': 'needs_password',
-                            'message': 'This PDF is password protected'
-                        })
-                        continue
+                    # First check if the file is a valid PDF
+                    try:
+                        reader = PdfReader(input_path)
                         
-                except Exception as e:
-                    if "password" in str(e).lower():
-                        app.logger.info(f"PDF requires password: {filename}")
-                        # Return info that password is needed
+                        # Check if the PDF is password-protected
+                        if reader.is_encrypted:
+                            # Try with empty password first
+                            decrypt_result = reader.decrypt('')
+                            
+                            # If decrypt_result > 0, file can be opened without password
+                            if decrypt_result <= 0:
+                                app.logger.info(f"PDF requires password: {filename}")
+                                # Return info that password is needed
+                                results.append({
+                                    'file_id': file_id,
+                                    'filename': file.filename,
+                                    'status': 'needs_password',
+                                    'message': 'This PDF is password protected'
+                                })
+                                continue
+                            
+                    except Exception as e:
+                        if "password" in str(e).lower():
+                            app.logger.info(f"PDF requires password: {filename}")
+                            # Return info that password is needed
+                            results.append({
+                                'file_id': file_id,
+                                'filename': file.filename,
+                                'status': 'needs_password',
+                                'message': 'This PDF is password protected'
+                            })
+                            continue
+                        else:
+                            # Not a password issue, might be a corrupt file
+                            app.logger.error(f"Error reading PDF: {str(e)}")
+                            results.append({
+                                'file_id': file_id,
+                                'filename': file.filename,
+                                'status': 'error',
+                                'message': f'Error: {str(e)}'
+                            })
+                            
+                            # Clean up the file
+                            if os.path.exists(input_path):
+                                os.remove(input_path)
+                            if file_id in protected_files:
+                                del protected_files[file_id]
+                                
+                            continue
+                    
+                    # If we get here, the PDF is not password-protected, try to unlock
+                    unlock_result = unlock_pdf(input_path, output_path, password='', file_id=file_id)
+                    
+                    if unlock_result['status'] == 'success':
+                        app.logger.info(f"Successfully unlocked PDF: {filename}")
+                        # Get the file info
+                        display_filename = unlock_result['filename']
+                        download_url = unlock_result['download_url']
+                        
                         results.append({
-                            'file_id': file_id,
-                            'filename': file.filename,
-                            'status': 'needs_password',
-                            'message': 'This PDF is password protected'
+                            'filename': display_filename, 
+                            'status': 'success',
+                            'download_url': download_url
                         })
-                        continue
                     else:
-                        # Not a password issue, might be a corrupt file
-                        app.logger.error(f"Error reading PDF: {str(e)}")
+                        app.logger.warning(f"Failed to unlock PDF: {filename}")
+                        # Failed to unlock, add to results
                         results.append({
                             'file_id': file_id,
                             'filename': file.filename,
                             'status': 'error',
-                            'message': f'Error: {str(e)}'
+                            'message': unlock_result['error']
                         })
-                        
-                        # Clean up the file
-                        if os.path.exists(input_path):
-                            os.remove(input_path)
-                        if file_id in protected_files:
-                            del protected_files[file_id]
-                            
-                        continue
+                except Exception as e:
+                    app.logger.error(f"General error processing PDF: {str(e)}")
+                    results.append({
+                        'filename': file.filename,
+                        'status': 'error',
+                        'message': f'Error: {str(e)}'
+                    })
+                    
+                    # Clean up the file
+                    if os.path.exists(input_path):
+                        os.remove(input_path)
+                    if file_id in protected_files:
+                        del protected_files[file_id]
+            else:
+                # Invalid file type
+                results.append({
+                    'filename': file.filename if file else 'Unknown file',
+                    'status': 'error',
+                    'message': 'Invalid file type. Only PDF files are accepted.'
+                })
+    
+    # Trường hợp 2: Xử lý file_ids[] - các file đã được tải lên trước đó
+    if 'file_ids[]' in request.form:
+        file_ids = request.form.getlist('file_ids[]')
+        
+        for file_id in file_ids:
+            # Get the input path
+            input_path = os.path.join(app.config['UPLOAD_FOLDER'], file_id)
+            
+            if not os.path.exists(input_path):
+                results.append({
+                    'file_id': file_id,
+                    'status': 'error',
+                    'message': 'File not found on server'
+                })
+                continue
                 
-                # If we get here, the PDF is not password-protected, try to unlock
+            # Get original filename
+            original_filename = protected_files.get(file_id, "document.pdf")
+            
+            # Create output path
+            output_filename = f"unlocked_{file_id}"
+            output_path = os.path.join(app.config['PROCESSED_FOLDER'], output_filename)
+            
+            # Try to unlock the file
+            try:
                 unlock_result = unlock_pdf(input_path, output_path, password='', file_id=file_id)
                 
                 if unlock_result['status'] == 'success':
-                    app.logger.info(f"Successfully unlocked PDF: {filename}")
+                    app.logger.info(f"Successfully unlocked PDF with ID: {file_id}")
                     # Get the file info
                     display_filename = unlock_result['filename']
                     download_url = unlock_result['download_url']
                     
                     results.append({
+                        'file_id': file_id,
                         'filename': display_filename, 
                         'status': 'success',
                         'download_url': download_url
                     })
                 else:
-                    app.logger.warning(f"Failed to unlock PDF: {filename}")
-                    # Failed to unlock, add to results
-                    results.append({
-                        'file_id': file_id,
-                        'filename': file.filename,
-                        'status': 'error',
-                        'message': unlock_result['error']
-                    })
+                    app.logger.warning(f"Failed to unlock PDF with ID: {file_id}")
+                    # Check if the error message indicates a password is needed
+                    if 'password' in unlock_result['error'].lower():
+                        results.append({
+                            'file_id': file_id,
+                            'filename': original_filename,
+                            'status': 'needs_password',
+                            'message': 'This PDF is password protected'
+                        })
+                    else:
+                        # Failed to unlock, add to results
+                        results.append({
+                            'file_id': file_id,
+                            'filename': original_filename,
+                            'status': 'error',
+                            'message': unlock_result['error']
+                        })
             except Exception as e:
-                app.logger.error(f"General error processing PDF: {str(e)}")
+                app.logger.error(f"General error processing PDF with ID {file_id}: {str(e)}")
                 results.append({
-                    'filename': file.filename,
+                    'file_id': file_id,
                     'status': 'error',
                     'message': f'Error: {str(e)}'
                 })
-                
-                # Clean up the file
-                if os.path.exists(input_path):
-                    os.remove(input_path)
-                if file_id in protected_files:
-                    del protected_files[file_id]
-        else:
-            # Invalid file type
-            results.append({
-                'filename': file.filename if file else 'Unknown file',
-                'status': 'error',
-                'message': 'Invalid file type. Only PDF files are accepted.'
-            })
+    
+    if not results:
+        return jsonify({'status': 'error', 'message': 'No files were processed'}), 400
     
     return jsonify(results)
 
@@ -940,22 +1012,40 @@ def check_password():
         # Check if the file is password-protected
         try:
             reader = PdfReader(input_path)
+            
+            # Check if the PDF is encrypted
             if reader.is_encrypted:
-                # Store original filename for later use
-                protected_files[file_id] = file.filename
+                # Try to open with an empty password
+                decrypt_result = reader.decrypt('')
                 
-                return jsonify({
-                    'needs_password': True,
-                    'file_id': file_id,
-                    'filename': file.filename
-                })
+                # If decrypt_result > 0, it means the file is only owner-password protected
+                # and can be accessed without a user password (decrypt_result = 1 or 2)
+                if decrypt_result > 0:
+                    app.logger.info(f"File is encrypted but can be opened without password: {file.filename}")
+                    
+                    # We can process this file without password
+                    return jsonify({
+                        'needs_password': False,
+                        'file_id': file_id,
+                        'filename': file.filename,
+                        'status': 'success'
+                    })
+                else:
+                    # Store original filename for later use - this file needs a password
+                    protected_files[file_id] = file.filename
+                    
+                    return jsonify({
+                        'needs_password': True,
+                        'file_id': file_id,
+                        'filename': file.filename
+                    })
             else:
-                # Remove the file if it's not password-protected
-                if os.path.exists(input_path):
-                    os.remove(input_path)
-                
+                # Not encrypted at all
                 return jsonify({
-                    'needs_password': False
+                    'needs_password': False,
+                    'file_id': file_id,
+                    'filename': file.filename,
+                    'status': 'success'
                 })
         except Exception as e:
             # Check if the error is related to password protection
@@ -963,6 +1053,7 @@ def check_password():
                 # Store original filename for later use
                 protected_files[file_id] = file.filename
                 
+                # If it specifically mentions incorrect password, it definitely needs one
                 return jsonify({
                     'needs_password': True,
                     'file_id': file_id,
