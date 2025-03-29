@@ -253,7 +253,7 @@ def unlock_pdf(input_path, output_path, password, file_id=None):
                             
                             return {
                                 'status': 'success',
-                                'filename': prefixed_filename,
+                                'filename': display_filename,
                                 'download_url': f'/download/{output_filename}'
                             }
                     except Exception as verify_error:
@@ -338,7 +338,7 @@ def unlock_pdf(input_path, output_path, password, file_id=None):
             app.logger.info(f"Successfully unlocked PDF: {original_filename}")
             return {
                 'status': 'success',
-                'filename': prefixed_filename,
+                'filename': display_filename,
                 'download_url': f'/download/{output_filename}'
             }
         except Exception as e:
@@ -417,7 +417,7 @@ def unlock_pdf(input_path, output_path, password, file_id=None):
                         
                         return {
                             'status': 'success',
-                            'filename': prefixed_filename,
+                            'filename': display_filename,
                             'download_url': f'/download/{output_filename}'
                         }
             except Exception as render_error:
