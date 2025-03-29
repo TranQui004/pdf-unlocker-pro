@@ -124,24 +124,69 @@ def unlock_pdf(input_path, output_path, password=None):
         # First attempt to open PDF with password if provided
         if password:
             try:
-                # Try opening with PdfReader first method
+                # Phương thức 1: Decrypt với PyPDF2
                 reader = PdfReader(input_path)
                 if reader.is_encrypted:
                     # Decrypt using the first method
                     success = reader.decrypt(password)
                     
-                    # If not successful, try alternate approach
+                    # If not successful, try alternate approaches
                     if success != 1:
-                        # Log attempt
-                        app.logger.info(f"First decrypt attempt failed, trying alternate method")
+                        app.logger.info(f"First decrypt attempt failed, trying alternate methods")
                         
-                        # Try direct construction with password
+                        # Phương thức 2: Tạo PdfReader với password parameter
                         try:
                             reader = PdfReader(input_path, password=password)
-                            # Check if still encrypted after providing password
                             if reader.is_encrypted:
-                                app.logger.error("PDF still encrypted after providing password")
-                                return {"status": "error", "message": "Incorrect password"}
+                                app.logger.error("PDF still encrypted after providing password - method 2 failed")
+                                
+                                # Phương thức 3: Thử tạo file mới hoàn toàn không có mật khẩu
+                                try:
+                                    app.logger.info("Trying method 3: Creating completely new file")
+                                    # Mở lại file với password
+                                    reader = PdfReader(input_path)
+                                    reader.decrypt(password)
+                                    
+                                    # Tạo writer mới
+                                    writer = PdfWriter()
+                                    
+                                    # Thêm tất cả các trang vào writer
+                                    for page in reader.pages:
+                                        writer.add_page(page)
+                                        
+                                    # Ghi ra file mới không có mật khẩu
+                                    with open(output_path, 'wb') as f:
+                                        writer.write(f)
+                                        
+                                    # Kiểm tra file đã được tạo thành công
+                                    if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                                        # Kiểm tra file mới có thể đọc được không
+                                        try:
+                                            test_reader = PdfReader(output_path)
+                                            if not test_reader.is_encrypted:
+                                                return {"status": "success", "message": "PDF unlocked successfully using method 3"}
+                                        except:
+                                            app.logger.error("Method 3 created invalid PDF")
+                                            
+                                    # Nếu vẫn thất bại, thử một cách khác
+                                    app.logger.info("Method 3 failed, trying method 4 with direct input/output")
+                                    # Mở với binary mode để đọc trực tiếp
+                                    with open(input_path, 'rb') as input_file:
+                                        reader = PdfReader(input_file)
+                                        # Mở với binary mode để ghi trực tiếp
+                                        success = reader.decrypt(password)
+                                        if success == 1 or not reader.is_encrypted:
+                                            writer = PdfWriter()
+                                            for page in reader.pages:
+                                                writer.add_page(page)
+                                            with open(output_path, 'wb') as output_file:
+                                                writer.write(output_file)
+                                            if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                                                return {"status": "success", "message": "PDF unlocked successfully using method 4"}
+                                except Exception as m3_error:
+                                    app.logger.error(f"Method 3 and 4 failed: {str(m3_error)}")
+                                
+                                return {"status": "error", "message": "Incorrect password - failed all unlock methods"}
                         except Exception as pw_error:
                             app.logger.error(f"Second decrypt attempt failed: {str(pw_error)}")
                             return {"status": "error", "message": "Incorrect password"}
