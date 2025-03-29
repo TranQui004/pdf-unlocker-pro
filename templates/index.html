@@ -671,6 +671,22 @@
             }, 3000);
         }
 
+        // Function to clear all files from display and storage
+        function clearAllFiles() {
+            files = [];
+            updateFileList();
+            unlockBtn.disabled = true;
+        }
+        
+        // Clear file list display if empty
+        function checkEmptyFileList() {
+            if (files.length === 0) {
+                fileList.innerHTML = '';
+                unlockBtn.disabled = true;
+            }
+        }
+        
+        // Update the updateFileList function to check for empty state
         function updateFileList() {
             fileList.innerHTML = '';
             
@@ -698,6 +714,7 @@
                             <span class="text-gray-800 font-medium block truncate" title="${displayName}">${displayName}</span>
                             <span class="text-gray-500 text-sm">${formatFileSize(file.size)}</span>
                             ${file.passwordProtected ? '<span class="bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded ml-2">Password Protected</span>' : ''}
+                            ${file.hasError ? `<span class="bg-red-100 text-red-800 text-xs px-2 py-1 rounded ml-2">Error</span>` : ''}
                         </div>
                     </div>
                     <button class="text-gray-400 hover:text-red-500 transition-colors ml-4" onclick="removeFile(${index})">
@@ -712,6 +729,9 @@
                     fileItem.classList.add('animate__animated', 'animate__fadeIn');
                 }, index * 100);
             });
+            
+            // Update the unlock button state
+            unlockBtn.disabled = files.length === 0;
         }
 
         function formatFileSize(bytes) {
@@ -847,7 +867,7 @@
                     }
                 });
                 
-                // Xóa các file đã xử lý khỏi danh sách
+                // Xóa các file đã xử lý thành công khỏi danh sách
                 files = files.filter(file => !file.processed);
                 
                 // Cập nhật giao diện
@@ -1335,10 +1355,13 @@
                         url: result.download_url
                     });
                     
-                    // Remove the file from the files array
+                    // Find the file in the array and mark it as processed
                     const fileIndex = files.findIndex(file => file.fileId === fileId);
                     if (fileIndex !== -1) {
+                        files[fileIndex].processed = true;
+                        // Remove the processed file from the files array
                         files.splice(fileIndex, 1);
+                        // Update the file list display
                         updateFileList();
                     }
                     
@@ -1390,6 +1413,14 @@
             if (passwordFile && passwordFile.fileId) {
                 // Show the password modal for this file
                 showPasswordModal(passwordFile.fileId, passwordFile.name);
+            } else {
+                // No more password-protected files, make sure UI is updated
+                checkEmptyFileList();
+                
+                // If all files are processed, show a success notification
+                if (files.length === 0 && processedFiles.length > 0) {
+                    showNotification('All files have been processed successfully!', 'success');
+                }
             }
         }
 
@@ -1449,10 +1480,13 @@
                         modalActive = false;
                     }
                     
-                    // Remove the file from the files array
+                    // Find the file in the array and mark it as processed
                     const fileIndex = files.findIndex(file => file.fileId === fileId);
                     if (fileIndex !== -1) {
+                        files[fileIndex].processed = true;
+                        // Remove the processed file from the files array
                         files.splice(fileIndex, 1);
+                        // Update the file list display
                         updateFileList();
                     }
                     
