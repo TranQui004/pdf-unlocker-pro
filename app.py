@@ -921,6 +921,68 @@ def emergency_reset():
         app.logger.error(f"Emergency reset error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/check-password', methods=['POST'])
+def check_password():
+    # Check if any files were uploaded
+    if 'files[]' not in request.files:
+        return jsonify({'status': 'error', 'message': 'No files were uploaded'}), 400
+    
+    file = request.files.getlist('files[]')[0]  # Lấy file đầu tiên
+    
+    if file and allowed_file(file.filename):
+        # Generate a unique ID for this file
+        file_id = str(uuid.uuid4())
+        
+        # Save the file temporarily
+        input_path = os.path.join(app.config['UPLOAD_FOLDER'], file_id)
+        file.save(input_path)
+        
+        # Check if the file is password-protected
+        try:
+            reader = PdfReader(input_path)
+            if reader.is_encrypted:
+                # Store original filename for later use
+                protected_files[file_id] = file.filename
+                
+                return jsonify({
+                    'needs_password': True,
+                    'file_id': file_id,
+                    'filename': file.filename
+                })
+            else:
+                # Remove the file if it's not password-protected
+                if os.path.exists(input_path):
+                    os.remove(input_path)
+                
+                return jsonify({
+                    'needs_password': False
+                })
+        except Exception as e:
+            # Check if the error is related to password protection
+            if "password" in str(e).lower():
+                # Store original filename for later use
+                protected_files[file_id] = file.filename
+                
+                return jsonify({
+                    'needs_password': True,
+                    'file_id': file_id,
+                    'filename': file.filename
+                })
+            else:
+                # Some other error occurred
+                if os.path.exists(input_path):
+                    os.remove(input_path)
+                
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e)
+                })
+    else:
+        return jsonify({
+            'status': 'error', 
+            'message': 'Invalid file type'
+        })
+
 if __name__ == "__main__":
     # Use PORT from environment if available (for Render.com and other hosting services)
     port = int(os.environ.get("PORT", 5000))

@@ -206,7 +206,7 @@
                 <div id="fileList" class="space-y-3 max-h-60 overflow-y-auto mb-6 px-1"></div>
 
                 <div class="text-center">
-                    <button id="unlockBtn" class="gradient-bg text-white text-lg px-10 py-4 rounded-lg shadow-md hover:opacity-90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                    <button id="unlockBtn" class="gradient-bg text-white text-lg px-10 py-4 rounded-lg shadow-md hover:opacity-90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled onclick="unlockPDFs()">
                         <i class="fas fa-unlock-alt mr-2"></i> Unlock PDFs
                     </button>
                     <p id="processingMessage" class="hidden mt-4 text-gray-600">
@@ -527,19 +527,14 @@
             animateDroppedFiles();
         });
 
-        fileInput.addEventListener('change', (e) => {
-            const selectedFiles = Array.from(e.target.files);
+        fileInput.addEventListener('change', function(e) {
+            const files = Array.from(e.target.files);
+            if (files.length === 0) return;
             
-            if (selectedFiles.length === 0) return;
+            // Clear file input to allow re-uploading the same file
+            this.value = '';
             
-            const pdfFiles = selectedFiles.filter(file => file.type === 'application/pdf');
-            
-            if (pdfFiles.length < selectedFiles.length) {
-                showNotification('Some files were skipped. Only PDF files are supported.', 'warning');
-            }
-            
-            handleFiles(pdfFiles);
-            animateDroppedFiles();
+            handleFiles(files);
         });
 
         function animateDroppedFiles() {
@@ -556,6 +551,41 @@
                 showNotification('Some files exceed the 16MB limit and were not added.', 'error');
                 newFiles = newFiles.filter(file => file.size <= 16 * 1024 * 1024);
             }
+            
+            // Detect password-protected PDFs immediately when added
+            newFiles.forEach(async file => {
+                try {
+                    // Create a temporary FormData to check if the file is password-protected
+                    const formData = new FormData();
+                    formData.append('files[]', file);
+                    
+                    // Send to server just to check if password is needed
+                    const response = await fetch('/check-password', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (response.ok) {
+                        const result = await response.json();
+                        
+                        if (result.needs_password) {
+                            // Mark the file as password-protected
+                            file.passwordProtected = true;
+                            
+                            // Store the file ID for later use
+                            file.fileId = result.file_id;
+                            
+                            // Update the file list to show password protection indicator
+                            updateFileList();
+                            
+                            // Notify the user
+                            showNotification(`"${file.name}" is password-protected.`, 'info');
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error checking password:', error);
+                }
+            });
             
             files = [...files, ...newFiles];
             updateFileList();
@@ -1135,11 +1165,11 @@
             const password = passwordInput.value.trim();
             
             if (!password) {
-                notification('Please enter a password', 'warning');
+                showNotification('Please enter a password', 'warning');
                 return;
             }
             
-            notification('Unlocking PDF...', 'info');
+            showNotification('Unlocking PDF...', 'info');
             
             const data = {
                 file_id: fileId,
@@ -1167,45 +1197,67 @@
                 
                 // Process the response
                 if (data.status === 'success') {
-                    notification('PDF unlocked successfully!', 'success');
-                    addToProcessedList(data.filename, data.download_url);
+                    showNotification('PDF unlocked successfully!', 'success');
                     
+                    // Add to processed files
+                    processedFiles.push({
+                        filename: data.filename,
+                        url: data.download_url
+                    });
+                    
+                    // Update download history
+                    updateDownloadHistory();
+                    
+                    // Close the password modal
                     const passwordModal = document.getElementById('passwordModal');
                     if (passwordModal) passwordModal.style.display = 'none';
                     
-                    // Remove from the upload list
-                    const uploadList = document.getElementById('uploadList');
-                    if (uploadList) {
-                        const items = uploadList.getElementsByTagName('li');
-                        for (let i = 0; i < items.length; i++) {
-                            if (items[i].getAttribute('data-file-id') === fileId) {
-                                uploadList.removeChild(items[i]);
-                                break;
-                            }
-                        }
-                        
-                        // If no more files in the list, hide the upload section
-                        if (uploadList.children.length === 0) {
-                            const uploadSection = document.getElementById('uploadSection');
-                            if (uploadSection) uploadSection.style.display = 'none';
-                        }
+                    // Remove the file from the files array
+                    const fileIndex = files.findIndex(file => file.fileId === fileId);
+                    if (fileIndex !== -1) {
+                        files.splice(fileIndex, 1);
+                        updateFileList();
                     }
                     
                     // Show the download section
-                    const downloadHistory = document.getElementById('downloadHistory');
-                    if (downloadHistory) downloadHistory.classList.remove('hidden');
+                    downloadHistory.classList.remove('hidden');
                 } else if (data.status === 'error') {
                     if (data.error && data.error.includes('incorrect password')) {
-                        notification('Incorrect password. Please try again.', 'error');
+                        showNotification('Incorrect password. Please try again.', 'error');
                     } else {
-                        notification('Error: ' + (data.error || 'Unknown error'), 'error');
+                        showNotification('Error: ' + (data.error || 'Unknown error'), 'error');
                     }
                 }
             })
             .catch(error => {
                 console.error('Error:', error);
-                notification('An error occurred while unlocking the PDF.', 'error');
+                showNotification('An error occurred while unlocking the PDF.', 'error');
             });
+        }
+
+        // Function to show debug information
+        function showDebugInfo(debugInfo, password) {
+            // Show the debug panel
+            const debugPanel = document.getElementById('debugPanel');
+            if (!debugPanel) return; // Avoid null reference error
+            
+            debugPanel.style.display = 'block';
+            
+            // Format and display the debug info
+            const debugOutput = document.getElementById('debugOutput');
+            if (!debugOutput) return; // Avoid null reference error
+            
+            let debugText = `Password attempted: "${password}"\n`;
+            debugText += `Password type: ${typeof password}\n`;
+            debugText += `Password length: ${password.length}\n\n`;
+            
+            if (typeof debugInfo === 'object') {
+                debugText += JSON.stringify(debugInfo, null, 2);
+            } else {
+                debugText += debugInfo;
+            }
+            
+            debugOutput.textContent = debugText;
         }
     </script>
     <script src="{{ url_for('static', filename='js/payment_info.js') }}"></script>
